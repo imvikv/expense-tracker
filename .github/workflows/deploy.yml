@@ -1,0 +1,67 @@
+name: Test and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Uses package-lock.json when present (commit it after your first local `npm install`).
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+
+      - name: Unit tests (parsers, categorisation, duplicates)
+        run: npm test
+
+      # Reported but non-blocking so a typing nit never stops a deploy; tests and build are blocking.
+      - name: Type check
+        run: npm run typecheck
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+        env:
+          # Public OAuth client ID (not a secret). Set under Settings → Secrets and variables → Actions → Variables.
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: Check no secrets or source maps were published
+        run: |
+          if ls dist/assets/*.map 2>/dev/null; then echo "Source maps found"; exit 1; fi
+          if grep -rIl "GOCSPX-\|client_secret" dist; then echo "Possible OAuth client secret in build"; exit 1; fi
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
