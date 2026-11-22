@@ -4,6 +4,7 @@
  * document, merged item-by-item (newest change wins) so two devices never clobber
  * each other. Transactions themselves are NOT included — each device re-reads Gmail.
  */
+import { validateTemplate, type CustomTemplate } from './parsers/taught';
 import { CATEGORIES, KIND_LABELS, type Category, type DuplicateStatus, type MerchantRule, type Settings, type Transaction, type TxnKind } from './types';
 
 /** A user decision about one transaction, keyed by its stable id (gmail:<messageId>:<n>). */
@@ -36,10 +37,13 @@ export interface PrefsDoc {
   /** Deleted rule ids → when. */
   deletedRules: Record<string, string>;
   edits: Record<string, TxnEdit>;
+  /** Bank-email templates taught in the app. */
+  templates: CustomTemplate[];
+  deletedTemplates: Record<string, string>;
 }
 
 export function emptyDoc(): PrefsDoc {
-  return { app: 'expense-tracker-prefs', version: 1, updatedAt: new Date(0).toISOString(), rules: [], deletedRules: {}, edits: {} };
+  return { app: 'expense-tracker-prefs', version: 1, updatedAt: new Date(0).toISOString(), rules: [], deletedRules: {}, edits: {}, templates: [], deletedTemplates: {} };
 }
 
 /** The user-made parts of a transaction, or null when it carries no user decision. */
@@ -86,6 +90,10 @@ export function mergeDocs(a: PrefsDoc, b: PrefsDoc): PrefsDoc {
   for (const r of [...a.rules, ...b.rules]) if (!deletedRules[r.id]) rules.set(r.id, r);
   const edits: Record<string, TxnEdit> = { ...a.edits };
   for (const [id, e] of Object.entries(b.edits)) if (!edits[id] || e.at > edits[id].at) edits[id] = e;
+  const deletedTemplates: Record<string, string> = { ...a.deletedTemplates };
+  for (const [id, at] of Object.entries(b.deletedTemplates ?? {})) if (!deletedTemplates[id] || at > deletedTemplates[id]) deletedTemplates[id] = at;
+  const templates = new Map<string, CustomTemplate>();
+  for (const t of [...(a.templates ?? []), ...(b.templates ?? [])]) if (!deletedTemplates[t.id]) templates.set(t.id, t);
   const settings = !a.settings ? b.settings : !b.settings ? a.settings : newer(a.settings.at, b.settings.at) ? a.settings : b.settings;
   return {
     app: 'expense-tracker-prefs',
@@ -95,6 +103,8 @@ export function mergeDocs(a: PrefsDoc, b: PrefsDoc): PrefsDoc {
     rules: [...rules.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt)),
     deletedRules,
     edits,
+    templates: [...templates.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt)),
+    deletedTemplates,
   };
 }
 
@@ -125,6 +135,8 @@ export function parseDoc(json: string): PrefsDoc {
     (r): r is MerchantRule => !!r && typeof r.id === 'string' && typeof r.pattern === 'string' && typeof r.createdAt === 'string' && (r.category === undefined || isCat(r.category)) && (r.kind === undefined || isKind(r.kind)),
   );
   for (const [id, at] of Object.entries(d.deletedRules ?? {})) if (typeof at === 'string') out.deletedRules[id] = at;
+  out.templates = (Array.isArray(d.templates) ? d.templates : []).map(validateTemplate).filter((t): t is CustomTemplate => t !== null).slice(0, 200);
+  for (const [id, at] of Object.entries(d.deletedTemplates ?? {})) if (typeof at === 'string') out.deletedTemplates[id] = at;
   for (const [id, e] of Object.entries(d.edits ?? {})) {
     if (!e || typeof e.at !== 'string') continue;
     out.edits[id] = {

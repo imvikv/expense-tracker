@@ -1,4 +1,4 @@
-import { genericParse, rx, runTemplates, type BankParser, type Template } from './common';
+import { rx, runTemplates, type BankParser, type Template } from './common';
 
 // In template sources a literal space means "one or more whitespace characters".
 const T: Template[] = [
@@ -112,7 +112,6 @@ export const hdfcParser: BankParser = {
   parse(email) {
     const hit = runTemplates('HDFC', T, email.body, email.receivedAt);
     if (hit) return [hit];
-    const g = genericParse('HDFC', email.body, email.receivedAt);
-    return g ? [g] : [];
+    return [];
   },
 };

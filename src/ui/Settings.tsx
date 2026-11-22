@@ -11,9 +11,18 @@ import { ingest, refreshDuplicates } from '../lib/sync';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type BankId, type Category, type TxnKind } from '../lib/types';
 import { Card } from './components';
 import { CardBills } from './CardBills';
+import { TeachSheet, type TeachSource } from './Teach';
+import { repoTaughtTemplates, type CustomTemplate } from '../lib/parsers/taught';
 import { formatINR, relativeTime, uid } from './format';
 import { useStore } from './store';
 import { useConnected } from './SyncSheet';
+
+/** Repo templates plus this device's, de-duplicated, as the content of taught-templates.json. */
+function exportTemplates(local: CustomTemplate[]): string {
+  const seen = new Set<string>();
+  const all = [...repoTaughtTemplates(), ...local].filter((t) => (seen.has(t.source) ? false : (seen.add(t.source), true)));
+  return JSON.stringify(all, null, 2) + '\n';
+}
 
 function ConfirmButton({ label, confirmLabel, onConfirm, danger }: { label: string; confirmLabel: string; onConfirm: () => void | Promise<void>; danger?: boolean }) {
   const [armed, setArmed] = useState(false);
@@ -38,7 +47,8 @@ function ConfirmButton({ label, confirmLabel, onConfirm, danger }: { label: stri
 
 export function Settings() {
   const store = useStore();
-  const { settings, saveSettings, rules, addRule, deleteRule, txns, reload, toast } = store;
+  const { settings, saveSettings, rules, addRule, deleteRule, txns, reload, toast, templates, deleteTemplate } = store;
+  const [teach, setTeach] = useState<TeachSource | null>(null);
   const connected = useConnected();
   const [clientId, setClientId] = useState(settings.clientId);
   const [own, setOwn] = useState(settings.ownIdentifiers.join('\n'));
@@ -381,6 +391,72 @@ export function Settings() {
           ) : (
             <p className="error">Not parsed: {testResult.msg}</p>
           ))}
+        {testText.trim().length > 20 && (!testResult?.ok || testResult.t.template === 'generic') && (
+          <button className="btn" onClick={() => setTeach({ kind: 'text', text: testText, bank: testFrom })}>
+            Teach the app this format
+          </button>
+        )}
+      </Card>
+
+      <Card title={`Taught templates (${templates.length + repoTaughtTemplates().length})`}>
+        <p className="hint">
+          Bank-email formats you taught with <strong>Teach</strong> (from Review → “Bank emails not understood”, or the parser tester above). They're kept with your settings and synced via Drive.
+        </p>
+        {templates.length + repoTaughtTemplates().length === 0 ? (
+          <p className="hint">None yet.</p>
+        ) : (
+          <ul className="rows">
+            {[...repoTaughtTemplates().map((t) => ({ t, repo: true })), ...templates.filter((t) => !repoTaughtTemplates().some((r) => r.source === t.source)).map((t) => ({ t, repo: false }))].map(({ t, repo }) => (
+              <li key={t.id} className="row static">
+                <span className="row-main">
+                  <strong>
+                    {t.name} {repo && <span className="badge">in GitHub</span>}
+                  </strong>
+                  <small>
+                    {BANK_LABELS[t.bank]} · {t.direction === 'credit' ? 'money in' : 'money out'}
+                    {t.kindHint ? ` · ${KIND_LABELS[t.kindHint]}` : ''}
+                  </small>
+                  <small className="sample">“{t.sample}”</small>
+                </span>
+                {!repo && (
+                  <button className="link" onClick={() => deleteTemplate(t.id)}>
+                    Delete
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {templates.length > 0 && (
+          <>
+            <h3 className="sub-head">Add them to GitHub</h3>
+            <ol className="bullets">
+              <li>Tap <strong>Copy for GitHub</strong>. It holds only the wording patterns and the shareable samples shown above — check they contain nothing personal.</li>
+              <li>
+                On GitHub open <code>src/lib/parsers/taught-templates.json</code> in <strong>imvikv/expense-tracker</strong> → pencil (Edit) → select all, paste → <strong>Commit changes</strong>.
+              </li>
+              <li>The deploy runs tests that check each template still reads its sample, then every browser gets them built in.</li>
+            </ol>
+            <div className="btn-row">
+              <button
+                className="btn primary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(exportTemplates(templates));
+                    toast('Copied — paste it into taught-templates.json on GitHub');
+                  } catch {
+                    download('taught-templates.json', exportTemplates(templates), 'application/json');
+                  }
+                }}
+              >
+                Copy for GitHub
+              </button>
+              <button className="btn" onClick={() => download('taught-templates.json', exportTemplates(templates), 'application/json')}>
+                Download file
+              </button>
+            </div>
+          </>
+        )}
       </Card>
 
       <Card title="Privacy">
@@ -393,6 +469,7 @@ export function Settings() {
         </ul>
         <p className="hint">Accepted sender domains: {Object.values(BANK_SENDER_DOMAINS).flat().join(', ')}.</p>
       </Card>
+      <TeachSheet source={teach} onClose={() => setTeach(null)} />
       <p className="version">Personal Expense Tracker · build {__BUILD_ID__}</p>
     </div>
   );

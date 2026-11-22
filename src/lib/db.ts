@@ -8,6 +8,7 @@
  *   meta         – settings
  */
 import { emptyDoc, type PrefsDoc } from './prefs';
+import { setLocalTemplates, type CustomTemplate } from './parsers/taught';
 import { DEFAULT_SETTINGS, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
 
 const DB_NAME = 'expense-tracker';
@@ -190,10 +191,28 @@ export const db = {
     await done(tx);
   },
 
+  async templates(): Promise<CustomTemplate[]> {
+    const db = await openDb();
+    return ((await req(db.transaction('meta').objectStore('meta').get('templates'))) as CustomTemplate[] | undefined) ?? [];
+  },
+  async saveTemplates(list: CustomTemplate[]): Promise<void> {
+    const db = await openDb();
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').put(list, 'templates');
+    await done(tx);
+    setLocalTemplates(list);
+  },
+  async deleteTemplate(id: string): Promise<void> {
+    await this.saveTemplates((await this.templates()).filter((t) => t.id !== id));
+    const d = await this.prefsDoc();
+    d.deletedTemplates[id] = new Date().toISOString();
+    await this.savePrefsDoc(d);
+  },
+
   async prefsDoc(): Promise<PrefsDoc> {
     const db = await openDb();
     const d = (await req(db.transaction('meta').objectStore('meta').get('prefs'))) as PrefsDoc | undefined;
-    return d ?? emptyDoc();
+    return d ? { ...emptyDoc(), ...d } : emptyDoc();
   },
   async savePrefsDoc(d: PrefsDoc): Promise<void> {
     const db = await openDb();

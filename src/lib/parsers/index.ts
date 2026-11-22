@@ -3,7 +3,8 @@ import { axisParser } from './axis';
 import { hdfcParser } from './hdfc';
 import { hsbcParser } from './hsbc';
 import { iciciParser } from './icici';
-import { isDeclined, isOtpOrSecurity, isPromotional, normaliseText, type BankParser, type EmailInput } from './common';
+import { genericParse, isDeclined, isOtpOrSecurity, isPromotional, normaliseText, type BankParser, type EmailInput } from './common';
+import { applyTaughtTemplates } from './taught';
 
 export type { EmailInput } from './common';
 
@@ -73,7 +74,13 @@ export function parseEmail(email: EmailInput): ParseResult {
   if (isDeclined(text)) return { status: 'ignored', bank, txns: [], reason: 'Declined or failed transaction' };
   if (isPromotional(subject, text)) return { status: 'ignored', bank, txns: [], reason: 'Promotional or statement email' };
 
-  const txns = PARSERS[bank].parse({ ...email, body: text, subject });
+  // Built-in bank templates → templates taught in the app (repo-shared, then your own) → cautious fallback.
+  let txns = PARSERS[bank].parse({ ...email, body: text, subject });
+  if (txns.length === 0) txns = applyTaughtTemplates(bank, text, email.receivedAt);
+  if (txns.length === 0) {
+    const g = genericParse(bank, text, email.receivedAt);
+    if (g) txns = [g];
+  }
   if (txns.length === 0) return { status: 'unparsed', bank, txns: [], reason: 'No template matched' };
 
   // If the email failed sender authentication, never trust it fully.

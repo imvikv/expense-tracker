@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { db } from '../lib/db';
 import { reapplyRules } from '../lib/categorize';
 import { schedulePrefsSync } from '../lib/prefsSync';
+import { setLocalTemplates, type CustomTemplate } from '../lib/parsers/taught';
 import { DEFAULT_SETTINGS, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from '../lib/types';
 
 export interface Store {
@@ -20,6 +21,9 @@ export interface Store {
   dismissUnparsed(id: string): Promise<void>;
   /** Choose which cards' bill payments count as spending, and re-classify stored bills. */
   setBillSpendCards(cards: string[]): Promise<number>;
+  templates: CustomTemplate[];
+  addTemplate(t: CustomTemplate): Promise<void>;
+  deleteTemplate(id: string): Promise<void>;
   toast(msg: string): void;
   toastMsg: string | null;
 }
@@ -34,10 +38,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [unparsed, setUnparsed] = useState<UnparsedEmail[]>([]);
   const [toastMsg, setToast] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<CustomTemplate[]>([]);
 
   const reload = useCallback(async () => {
     try {
-      const [t, r, s, u] = await Promise.all([db.allTransactions(), db.allRules(), db.settings(), db.allUnparsed()]);
+      const [t, r, s, u, tpl] = await Promise.all([db.allTransactions(), db.allRules(), db.settings(), db.allUnparsed(), db.templates()]);
+      setLocalTemplates(tpl);
+      setTemplates(tpl);
       t.sort((a, b) => b.date.localeCompare(a.date));
       setTxns(t);
       setRules(r);
@@ -121,14 +128,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [updateTxns, reload],
   );
 
+  const addTemplate = useCallback(
+    async (t: CustomTemplate) => {
+      const list = [...(await db.templates()).filter((x) => x.id !== t.id), t];
+      await db.saveTemplates(list);
+      setTemplates(list);
+      await db.saveSettings({ ...(await db.settings()), pendingReread: true });
+      schedulePrefsSync(() => void reload());
+    },
+    [reload],
+  );
+
+  const deleteTemplate = useCallback(
+    async (id: string) => {
+      await db.deleteTemplate(id);
+      setTemplates(await db.templates());
+      schedulePrefsSync(() => void reload());
+    },
+    [reload],
+  );
+
   const dismissUnparsed = useCallback(async (id: string) => {
     await db.deleteUnparsed(id);
     setUnparsed((u) => u.filter((x) => x.id !== id));
   }, []);
 
   const value = useMemo<Store>(
-    () => ({ ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, toast, toastMsg }),
-    [ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, toast, toastMsg],
+    () => ({ ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, templates, addTemplate, deleteTemplate, toast, toastMsg }),
+    [ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, templates, addTemplate, deleteTemplate, toast, toastMsg],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

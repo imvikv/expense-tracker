@@ -1,4 +1,4 @@
-import { genericParse, rx, runTemplates, type BankParser, type Template } from './common';
+import { rx, runTemplates, type BankParser, type Template } from './common';
 
 const END = String.raw`(?:\.\s|\.$|\sAvl|\sAvailable|\n|$)`;
 
@@ -64,7 +64,6 @@ export const hsbcParser: BankParser = {
   parse(email) {
     const hit = runTemplates('HSBC', T, email.body, email.receivedAt);
     if (hit) return [hit];
-    const g = genericParse('HSBC', email.body, email.receivedAt);
-    return g ? [g] : [];
+    return [];
   },
 };

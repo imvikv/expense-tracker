@@ -86,15 +86,24 @@ public/sw.js        service worker (app shell only)
 
 ## Adding or fixing a bank template
 
-Bank email formats change. When a real alert isn’t recognised it shows up under **Review → Bank emails not understood**.
+Bank email formats change. When a real alert isn't recognised it shows up under **Review → Bank emails not understood**.
 
-1. Open the email, copy its text, **redact** names/references, and paste it into **Settings → Parser tester** to see what happens.
-2. Add a template to `src/lib/parsers/<bank>.ts`. In template sources a literal space means “one or more whitespace”, and `{AMT}` matches `Rs.`/`INR`/`₹` plus the amount.
-3. Add the redacted email as a fixture with expected values in `src/lib/sampleEmails.ts` and run `npm test`.
+### In the app: Teach
 
-The included fixtures are **synthetic** — modelled on the structure of real HDFC/ICICI/Axis/HSBC alerts, but every number and name is invented. Expect to add a template or two once you see your own banks’ current wording.
+1. Tap **Teach** on the email (or paste its text into **Settings → Parser tester → Teach the app this format**).
+2. The app fetches the email from Gmail on your device and pre-marks the amount, date and your account. Pick a field chip (*Paid to / from*, *Their account*, …) and tap the words that hold it.
+3. Choose money out / in and, if needed, the kind (refund, card bill payment, transfer…). The preview shows how it will be read.
+4. **Save template**. Every not-understood email is re-read straight away (if connected), and future emails with the same wording are read automatically. Templates are saved with your settings and synced via Drive.
 
-To accept a new sender domain (banks are moving to `*.bank.in`), edit `BANK_SENDER_DOMAINS` in `src/lib/parsers/index.ts`.
+Templates contain only the bank's fixed wording as a pattern plus a *shareable sample* where your amount, payee, accounts, numbers and UPI IDs are replaced. Names are generated from the fixed wording only.
+
+### Into GitHub: built in for every device
+
+**Settings → Taught templates → Copy for GitHub**, then on GitHub edit [`src/lib/parsers/taught-templates.json`](src/lib/parsers/taught-templates.json), replace its contents with what you copied, and commit. The deploy's tests check that every template still reads its own sample. Order of matching: built-in code templates → `taught-templates.json` → your device's taught templates → cautious fallback reader.
+
+### In code
+
+For formats that need logic (like ICICI auto-debit), add a template to `src/lib/parsers/<bank>.ts` (a literal space means “one or more whitespace”, `{AMT}` matches `Rs.`/`INR`/`₹` + amount), add a redacted fixture with expected values in `src/lib/sampleEmails.ts`, and run `npm test`. To accept a new sender domain, edit `BANK_SENDER_DOMAINS` in `src/lib/parsers/index.ts`.
 
 ## Privacy & security model
 

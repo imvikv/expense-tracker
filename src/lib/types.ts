@@ -210,6 +210,8 @@ export interface Settings {
   /** Back up preferences to the app's hidden folder in Google Drive (default on). */
   prefsSync?: boolean;
   prefsSyncedAt?: string;
+  /** A template was taught: re-read not-understood and fallback-read emails on the next sync. */
+  pendingReread?: boolean;
   lastSyncAt?: string;
   /** Latest email date seen during sync (ISO), used for incremental sync. */
   syncedThrough?: string;

@@ -81,7 +81,7 @@ export async function ingest(
       const old = existing.get(t.id);
       if (!old) return false;
       // Older parser generation, or a generic low-confidence read that a bank template now understands.
-      return (old.detailVersion ?? 1) < DETAIL_VERSION || (old.template === 'generic' && (old.parserBuild ?? 1) < PARSER_BUILD);
+      return (old.detailVersion ?? 1) < DETAIL_VERSION || (old.template === 'generic' && (t.template !== 'generic' || (old.parserBuild ?? 1) < PARSER_BUILD));
     })
     .map((t) => mergeDetails(existing.get(t.id)!, t));
   const added = await db.insertNewTransactions(toInsert);
@@ -94,9 +94,10 @@ export async function ingest(
 
 /** Gmail message ids whose transactions predate the current payee-detail parser, plus emails no template understood. */
 export async function backfillCandidates(): Promise<string[]> {
-  const [txns, unparsed] = await Promise.all([db.allTransactions(), db.allUnparsed()]);
+  const [txns, unparsed, settings] = await Promise.all([db.allTransactions(), db.allUnparsed(), db.settings()]);
   const ids = new Set<string>();
-  for (const t of txns) if (t.source === 'gmail' && ((t.detailVersion ?? 1) < DETAIL_VERSION || (t.template === 'generic' && (t.parserBuild ?? 1) < PARSER_BUILD))) ids.add(t.sourceMessageId);
+  const rereadGeneric = !!settings.pendingReread;
+  for (const t of txns) if (t.source === 'gmail' && ((t.detailVersion ?? 1) < DETAIL_VERSION || (t.template === 'generic' && (rereadGeneric || (t.parserBuild ?? 1) < PARSER_BUILD)))) ids.add(t.sourceMessageId);
   for (const u of unparsed) if (!u.id.startsWith('sample') && !u.id.startsWith('fx')) ids.add(u.id);
   return [...ids];
 }
@@ -194,6 +195,7 @@ export async function syncGmail(opts: {
     const missing = await fetchAndIngest(backfill, opts, progress, report, onBatch);
     await markGone(missing);
   }
+  await clearPendingReread();
 
   progress.phase = 'finishing';
   report();
@@ -264,6 +266,33 @@ async function fetchAndIngest(
   }
   if (opts.signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError');
   return missing;
+}
+
+async function clearPendingReread(): Promise<void> {
+  const s = await db.settings();
+  if (s.pendingReread) await db.saveSettings({ ...s, pendingReread: false });
+}
+
+/**
+ * Re-read emails that weren't understood (and fallback guesses) right away, e.g. just
+ * after the user taught a new template. Needs a Gmail connection.
+ */
+export async function rereadNow(opts: { rules: MerchantRule[]; settings: Settings; onProgress?: (p: SyncProgress) => void }): Promise<{ added: number; updated: number; stillUnparsed: number }> {
+  const progress: SyncProgress = { phase: 'updating', found: 0, skipped: 0, fetched: 0, total: 0, added: 0, updated: 0, removed: 0 };
+  const report = () => opts.onProgress?.({ ...progress });
+  const ids = await backfillCandidates();
+  progress.total = ids.length;
+  report();
+  let stillUnparsed = 0;
+  const missing = await fetchAndIngest(ids, opts, progress, report, (r) => {
+    progress.added += r.added;
+    progress.updated += r.updated;
+    stillUnparsed += r.unparsed;
+  });
+  await markGone(missing);
+  await clearPendingReread();
+  await refreshDuplicates();
+  return { added: progress.added, updated: progress.updated, stillUnparsed };
 }
 
 /** Emails deleted from Gmail can't be re-read: keep their transactions as they are and stop retrying. */

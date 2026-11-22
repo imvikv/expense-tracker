@@ -6,9 +6,10 @@ import { applyEdit, editOf, emptyDoc, mergeDocs, parseDoc, sameDoc, settingsPart
 
 /** Everything this device knows: the stored document plus current rules, settings and edits. */
 export async function localDoc(): Promise<PrefsDoc> {
-  const [stored, rules, settings, txns] = await Promise.all([db.prefsDoc(), db.allRules(), db.settings(), db.allTransactions()]);
+  const [stored, rules, settings, txns, templates] = await Promise.all([db.prefsDoc(), db.allRules(), db.settings(), db.allTransactions(), db.templates()]);
   const current = emptyDoc();
   current.rules = rules;
+  current.templates = templates;
   current.settings = settingsPart(settings);
   for (const t of txns) {
     if (t.source === 'sample') continue;
@@ -24,6 +25,13 @@ export async function applyDoc(doc: PrefsDoc): Promise<number> {
   const have = new Set(rules.map((r) => r.id));
   for (const r of doc.rules) if (!have.has(r.id)) await db.putRule(r);
   for (const id of Object.keys(doc.deletedRules)) if (have.has(id)) await db.deleteRule(id);
+
+  const localTemplates = await db.templates();
+  const wantTemplates = doc.templates.filter((t) => !doc.deletedTemplates[t.id]);
+  if (JSON.stringify(localTemplates.map((t) => t.id).sort()) !== JSON.stringify(wantTemplates.map((t) => t.id).sort())) {
+    await db.saveTemplates(wantTemplates);
+    if (wantTemplates.some((t) => !localTemplates.find((l) => l.id === t.id))) await db.saveSettings({ ...(await db.settings()), pendingReread: true });
+  }
 
   let settings = await db.settings();
   if (doc.settings && (doc.settings.at ?? '') > (settings.settingsAt ?? '')) {

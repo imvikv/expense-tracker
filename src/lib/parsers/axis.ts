@@ -1,4 +1,4 @@
-import { genericParse, last4, make, parseInfo, rx, runTemplates, toPaise, type BankParser, type Template } from './common';
+import { last4, make, parseInfo, rx, runTemplates, toPaise, type BankParser, type Template } from './common';
 import type { ParsedTxn, PaymentMethod } from '../types';
 
 const T: Template[] = [
@@ -82,7 +82,6 @@ export const axisParser: BankParser = {
   parse(email) {
     const hit = runTemplates('AXIS', T, email.body, email.receivedAt) ?? parseKeyValue(email.body, email.receivedAt);
     if (hit) return [hit];
-    const g = genericParse('AXIS', email.body, email.receivedAt);
-    return g ? [g] : [];
+    return [];
   },
 };

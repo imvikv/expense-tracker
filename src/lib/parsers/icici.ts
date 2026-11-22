@@ -1,4 +1,4 @@
-import { genericParse, last4, make, rx, runTemplates, toPaise, type BankParser, type Template } from './common';
+import { last4, make, rx, runTemplates, toPaise, type BankParser, type Template } from './common';
 import type { ParsedTxn } from '../types';
 
 const INFO_END = String.raw`(?:\.\s|\.$|\n|$)`;
@@ -117,7 +117,6 @@ export const iciciParser: BankParser = {
   parse(email) {
     const hit = parseAutoDebit(email.body, email.receivedAt) ?? runTemplates('ICICI', T, email.body, email.receivedAt);
     if (hit) return [hit];
-    const g = genericParse('ICICI', email.body, email.receivedAt);
-    return g ? [g] : [];
+    return [];
   },
 };

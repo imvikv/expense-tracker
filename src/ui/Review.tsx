@@ -7,6 +7,7 @@ import { formatDate, formatINR } from './format';
 import { isUnclear, payeeGroups } from '../lib/insights';
 import { PayeeSheet, PayeeTag } from './Payee';
 import { CardBills } from './CardBills';
+import { TeachSheet, type TeachSource } from './Teach';
 import { cardBillSummary } from '../lib/categorize';
 import type { TxnFilter } from './Transactions';
 import { useStore } from './store';
@@ -31,6 +32,7 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
   const unclear = useMemo(() => payeeGroups(txns, isUnclear), [txns]);
   const unclearTotal = unclear.reduce((s, g) => s + g.spendPaise, 0);
   const [payee, setPayee] = useState<string | null>(null);
+  const [teach, setTeach] = useState<TeachSource | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   const hasBillSuggestion = useMemo(() => cardBillSummary(txns, settings).some((c) => c.purchases === 0 && !c.countsAsSpending), [txns, settings]);
@@ -93,7 +95,7 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
         ))}
       {unparsed.length > 0 && (
         <Card title={`Bank emails not understood (${unparsed.length})`}>
-          <p className="hint">These came from a bank address and mention a transaction, but no template matched, so nothing was recorded. Only the sender, subject and date are stored. You can test the text with the parser tester in Settings.</p>
+          <p className="hint">These came from a bank address and mention a transaction, but no template matched, so nothing was recorded. Tap <strong>Teach</strong> to show the app where the amount and payee are; every email with the same wording is then read. Dismiss ones that aren't transactions.</p>
           <ul className="rows">
             {unparsed.slice(0, 50).map((u) => (
               <li key={u.id} className="row static">
@@ -108,6 +110,11 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
                     <a className="link" href={gmailLink(u.id)} target="_blank" rel="noopener noreferrer">
                       Open
                     </a>
+                  )}
+                  {u.bank && !u.id.startsWith('sample') && !u.id.startsWith('fx') && (
+                    <button className="link" onClick={() => setTeach({ kind: 'email', id: u.id, bank: u.bank!, subject: u.subject })}>
+                      Teach
+                    </button>
                   )}
                   <button className="link" onClick={() => dismissUnparsed(u.id)}>
                     Dismiss
@@ -126,6 +133,7 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
           setPayee(k);
         }}
       />
+      <TeachSheet source={teach} onClose={() => setTeach(null)} />
       <PayeeSheet
         payee={payee}
         onClose={() => setPayee(null)}
