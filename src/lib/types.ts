@@ -189,6 +189,8 @@ export interface MerchantRule {
 /** A bank email that looked like a transaction but could not be parsed. Only headers are kept. */
 export interface UnparsedEmail {
   id: string;
+  /** When hidden by an "Ignore all like this" rule: that rule's id (kept so it can be undone). */
+  ignoredBy?: string;
   from: string;
   subject: string;
   date: string;

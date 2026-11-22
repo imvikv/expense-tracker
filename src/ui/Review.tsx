@@ -15,7 +15,7 @@ import { TxnRow } from './Transactions';
 import { TxnSheet } from './TxnSheet';
 
 export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
-  const { txns, unparsed, dismissUnparsed, settings } = useStore();
+  const { txns, unparsed, dismissUnparsed, settings, ignoreLike, toast } = useStore();
   const [open, setOpen] = useState<Transaction | null>(null);
 
   const sections = useMemo(() => {
@@ -95,7 +95,7 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
         ))}
       {unparsed.length > 0 && (
         <Card title={`Bank emails not understood (${unparsed.length})`}>
-          <p className="hint">These came from a bank address and mention a transaction, but no template matched, so nothing was recorded. Tap <strong>Teach</strong> to show the app where the amount and payee are; every email with the same wording is then read. Dismiss ones that aren't transactions.</p>
+          <p className="hint">These came from a bank address and mention a transaction, but no template matched, so nothing was recorded. Tap <strong>Teach</strong> to show the app where the amount and payee are; every email with the same wording is then read. Statements, notices and reminders: <strong>Ignore all like this</strong> skips every email from that bank with the same kind of subject (numbers and dates can differ); <strong>Dismiss</strong> hides just one.</p>
           <ul className="rows">
             {unparsed.slice(0, 50).map((u) => (
               <li key={u.id} className="row static">
@@ -119,6 +119,17 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
                   <button className="link" onClick={() => dismissUnparsed(u.id)}>
                     Dismiss
                   </button>
+                  {u.bank && u.subject.trim() && (
+                    <button
+                      className="link"
+                      onClick={async () => {
+                        const n = await ignoreLike(u.bank!, u.subject);
+                        toast(`Ignoring “${u.subject.slice(0, 40)}” emails from ${BANK_LABELS[u.bank!]} · ${n} cleared`);
+                      }}
+                    >
+                      Ignore all like this
+                    </button>
+                  )}
                 </span>
               </li>
             ))}

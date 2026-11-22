@@ -47,7 +47,7 @@ function ConfirmButton({ label, confirmLabel, onConfirm, danger }: { label: stri
 
 export function Settings() {
   const store = useStore();
-  const { settings, saveSettings, rules, addRule, deleteRule, txns, reload, toast, templates, deleteTemplate } = store;
+  const { settings, saveSettings, rules, addRule, deleteRule, txns, reload, toast, templates, deleteTemplate, ignoreRules, stopIgnoring } = store;
   const [teach, setTeach] = useState<TeachSource | null>(null);
   const connected = useConnected();
   const [clientId, setClientId] = useState(settings.clientId);
@@ -458,6 +458,31 @@ export function Settings() {
           </>
         )}
       </Card>
+
+      {ignoreRules.length > 0 && (
+        <Card title={`Ignored email types (${ignoreRules.length})`}>
+          <p className="hint">Bank emails you marked as not transactions. They're skipped only when no template can read them, so a real alert with the same subject still counts. Synced via Drive.</p>
+          <ul className="rows">
+            {ignoreRules.map((r) => (
+              <li key={r.id} className="row static">
+                <span className="row-main">
+                  <strong>“{r.example}”</strong>
+                  <small>{BANK_LABELS[r.bank]}</small>
+                </span>
+                <button
+                  className="link"
+                  onClick={async () => {
+                    await stopIgnoring(r.id);
+                    toast('No longer ignored · retried on your next Sync');
+                  }}
+                >
+                  Stop ignoring
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card title="Privacy">
         <ul className="bullets">

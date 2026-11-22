@@ -5,6 +5,7 @@
  * each other. Transactions themselves are NOT included — each device re-reads Gmail.
  */
 import { validateTemplate, type CustomTemplate } from './parsers/taught';
+import { validateIgnoreRule, type IgnoreRule } from './parsers/ignore';
 import { CATEGORIES, KIND_LABELS, type Category, type DuplicateStatus, type MerchantRule, type Settings, type Transaction, type TxnKind } from './types';
 
 /** A user decision about one transaction, keyed by its stable id (gmail:<messageId>:<n>). */
@@ -40,10 +41,13 @@ export interface PrefsDoc {
   /** Bank-email templates taught in the app. */
   templates: CustomTemplate[];
   deletedTemplates: Record<string, string>;
+  /** "Ignore all like this" rules. */
+  ignore: IgnoreRule[];
+  deletedIgnore: Record<string, string>;
 }
 
 export function emptyDoc(): PrefsDoc {
-  return { app: 'expense-tracker-prefs', version: 1, updatedAt: new Date(0).toISOString(), rules: [], deletedRules: {}, edits: {}, templates: [], deletedTemplates: {} };
+  return { app: 'expense-tracker-prefs', version: 1, updatedAt: new Date(0).toISOString(), rules: [], deletedRules: {}, edits: {}, templates: [], deletedTemplates: {}, ignore: [], deletedIgnore: {} };
 }
 
 /** The user-made parts of a transaction, or null when it carries no user decision. */
@@ -94,6 +98,10 @@ export function mergeDocs(a: PrefsDoc, b: PrefsDoc): PrefsDoc {
   for (const [id, at] of Object.entries(b.deletedTemplates ?? {})) if (!deletedTemplates[id] || at > deletedTemplates[id]) deletedTemplates[id] = at;
   const templates = new Map<string, CustomTemplate>();
   for (const t of [...(a.templates ?? []), ...(b.templates ?? [])]) if (!deletedTemplates[t.id]) templates.set(t.id, t);
+  const deletedIgnore: Record<string, string> = { ...(a.deletedIgnore ?? {}) };
+  for (const [id, at] of Object.entries(b.deletedIgnore ?? {})) if (!deletedIgnore[id] || at > deletedIgnore[id]) deletedIgnore[id] = at;
+  const ignore = new Map<string, IgnoreRule>();
+  for (const r of [...(a.ignore ?? []), ...(b.ignore ?? [])]) if (!deletedIgnore[r.id]) ignore.set(r.id, r);
   const settings = !a.settings ? b.settings : !b.settings ? a.settings : newer(a.settings.at, b.settings.at) ? a.settings : b.settings;
   return {
     app: 'expense-tracker-prefs',
@@ -105,6 +113,8 @@ export function mergeDocs(a: PrefsDoc, b: PrefsDoc): PrefsDoc {
     edits,
     templates: [...templates.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt)),
     deletedTemplates,
+    ignore: [...ignore.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt)),
+    deletedIgnore,
   };
 }
 
@@ -137,6 +147,8 @@ export function parseDoc(json: string): PrefsDoc {
   for (const [id, at] of Object.entries(d.deletedRules ?? {})) if (typeof at === 'string') out.deletedRules[id] = at;
   out.templates = (Array.isArray(d.templates) ? d.templates : []).map(validateTemplate).filter((t): t is CustomTemplate => t !== null).slice(0, 200);
   for (const [id, at] of Object.entries(d.deletedTemplates ?? {})) if (typeof at === 'string') out.deletedTemplates[id] = at;
+  out.ignore = (Array.isArray(d.ignore) ? d.ignore : []).map(validateIgnoreRule).filter((r): r is IgnoreRule => r !== null).slice(0, 500);
+  for (const [id, at] of Object.entries(d.deletedIgnore ?? {})) if (typeof at === 'string') out.deletedIgnore[id] = at;
   for (const [id, e] of Object.entries(d.edits ?? {})) {
     if (!e || typeof e.at !== 'string') continue;
     out.edits[id] = {

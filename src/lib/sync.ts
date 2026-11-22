@@ -51,6 +51,7 @@ export async function ingest(
   const processed: ProcessedRecord[] = [];
   const unparsed: UnparsedEmail[] = [];
   const nowParsed: string[] = [];
+  const hidden: UnparsedEmail[] = [];
   let ignored = 0;
   const now = new Date().toISOString();
   for (const e of emails) {
@@ -61,7 +62,10 @@ export async function ingest(
       r.txns.forEach((p, i) => fresh.push(buildTransaction(p, { messageId: e.id, index: i, source: opts.source, rules: opts.rules, settings: opts.settings, subject: e.subject })));
     } else if (r.status === 'unparsed' && r.bank) {
       unparsed.push({ id: e.id, from: e.from.slice(0, 120), subject: e.subject.slice(0, 160), date: e.receivedAt, bank: r.bank });
-    } else ignored++;
+    } else {
+      ignored++;
+      if (r.ignoreRule && r.bank) hidden.push({ id: e.id, from: e.from.slice(0, 120), subject: e.subject.slice(0, 160), date: e.receivedAt, bank: r.bank, ignoredBy: r.ignoreRule });
+    }
   }
   // Emails that an older, looser reader turned into a transaction but are now recognised as
   // promotions / OTPs / declined: drop those guesses.
@@ -87,7 +91,8 @@ export async function ingest(
   const added = await db.insertNewTransactions(toInsert);
   await db.putTransactions(toUpdate);
   await db.putUnparsed(unparsed);
-  await db.deleteUnparsedMany(nowParsed);
+  await db.deleteUnparsedMany([...nowParsed, ...hidden.map((h) => h.id)]);
+  if (hidden.length) await db.saveHiddenByIgnore([...(await db.hiddenByIgnore()).filter((h) => !hidden.some((x) => x.id === h.id)), ...hidden]);
   await db.putProcessed(processed);
   return { added, updated: toUpdate.length, unparsed: unparsed.length, ignored, removed: stale.length };
 }

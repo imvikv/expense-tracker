@@ -9,6 +9,7 @@
  */
 import { emptyDoc, type PrefsDoc } from './prefs';
 import { setLocalTemplates, type CustomTemplate } from './parsers/taught';
+import { setIgnoreRules, type IgnoreRule } from './parsers/ignore';
 import { DEFAULT_SETTINGS, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
 
 const DB_NAME = 'expense-tracker';
@@ -206,6 +207,41 @@ export const db = {
     await this.saveTemplates((await this.templates()).filter((t) => t.id !== id));
     const d = await this.prefsDoc();
     d.deletedTemplates[id] = new Date().toISOString();
+    await this.savePrefsDoc(d);
+  },
+
+  async ignoreRules(): Promise<IgnoreRule[]> {
+    const db = await openDb();
+    return ((await req(db.transaction('meta').objectStore('meta').get('ignoreRules'))) as IgnoreRule[] | undefined) ?? [];
+  },
+  async saveIgnoreRules(list: IgnoreRule[]): Promise<void> {
+    const db = await openDb();
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').put(list, 'ignoreRules');
+    await done(tx);
+    setIgnoreRules(list);
+  },
+  /** Not-understood emails hidden by ignore rules (headers only), so "Stop ignoring" can bring them back. */
+  async hiddenByIgnore(): Promise<UnparsedEmail[]> {
+    const db = await openDb();
+    return ((await req(db.transaction('meta').objectStore('meta').get('hiddenByIgnore'))) as UnparsedEmail[] | undefined) ?? [];
+  },
+  async saveHiddenByIgnore(list: UnparsedEmail[]): Promise<void> {
+    const db = await openDb();
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').put(list.slice(-5000), 'hiddenByIgnore');
+    await done(tx);
+  },
+  async deleteIgnoreRule(id: string): Promise<void> {
+    await this.saveIgnoreRules((await this.ignoreRules()).filter((r) => r.id !== id));
+    // Bring back what this rule hid.
+    const hidden = await this.hiddenByIgnore();
+    const back = hidden.filter((u) => u.ignoredBy === id).map((u) => ({ ...u, ignoredBy: undefined }));
+    await this.saveHiddenByIgnore(hidden.filter((u) => u.ignoredBy !== id));
+    await putMany('unparsed', back);
+    await putMany('processed', back.map((u) => ({ id: u.id, status: 'unparsed', at: new Date().toISOString() })));
+    const d = await this.prefsDoc();
+    d.deletedIgnore[id] = new Date().toISOString();
     await this.savePrefsDoc(d);
   },
 

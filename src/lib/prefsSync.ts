@@ -2,14 +2,16 @@ import { accessToken, hasDriveAccess } from './auth';
 import { reapplyRules } from './categorize';
 import { db } from './db';
 import { findPrefsFile, readPrefsFile, writePrefsFile } from './drive';
+import { ignoredBy } from './parsers/ignore';
 import { applyEdit, editOf, emptyDoc, mergeDocs, parseDoc, sameDoc, settingsPart, type PrefsDoc } from './prefs';
 
 /** Everything this device knows: the stored document plus current rules, settings and edits. */
 export async function localDoc(): Promise<PrefsDoc> {
-  const [stored, rules, settings, txns, templates] = await Promise.all([db.prefsDoc(), db.allRules(), db.settings(), db.allTransactions(), db.templates()]);
+  const [stored, rules, settings, txns, templates, ignore] = await Promise.all([db.prefsDoc(), db.allRules(), db.settings(), db.allTransactions(), db.templates(), db.ignoreRules()]);
   const current = emptyDoc();
   current.rules = rules;
   current.templates = templates;
+  current.ignore = ignore;
   current.settings = settingsPart(settings);
   for (const t of txns) {
     if (t.source === 'sample') continue;
@@ -31,6 +33,13 @@ export async function applyDoc(doc: PrefsDoc): Promise<number> {
   if (JSON.stringify(localTemplates.map((t) => t.id).sort()) !== JSON.stringify(wantTemplates.map((t) => t.id).sort())) {
     await db.saveTemplates(wantTemplates);
     if (wantTemplates.some((t) => !localTemplates.find((l) => l.id === t.id))) await db.saveSettings({ ...(await db.settings()), pendingReread: true });
+  }
+
+  const wantIgnore = doc.ignore.filter((r) => !doc.deletedIgnore[r.id]);
+  const haveIgnore = await db.ignoreRules();
+  if (JSON.stringify(haveIgnore.map((r) => r.id).sort()) !== JSON.stringify(wantIgnore.map((r) => r.id).sort())) {
+    await db.saveIgnoreRules(wantIgnore);
+    await dropIgnoredUnparsed();
   }
 
   let settings = await db.settings();
@@ -100,4 +109,17 @@ export function schedulePrefsSync(after?: () => void): void {
       .then((r) => r.changed && after?.())
       .catch(() => undefined);
   }, 2500);
+}
+
+/** Remove not-understood entries that an ignore rule now covers. Returns how many. */
+export async function dropIgnoredUnparsed(): Promise<number> {
+  const list = await db.allUnparsed();
+  const gone = list.flatMap((u) => {
+    const r = u.bank ? ignoredBy(u.bank, u.subject) : undefined;
+    return r ? [{ ...u, ignoredBy: r.id }] : [];
+  });
+  await db.saveHiddenByIgnore([...(await db.hiddenByIgnore()), ...gone]);
+  await db.deleteUnparsedMany(gone.map((u) => u.id));
+  await db.putProcessed(gone.map((u) => ({ id: u.id, status: 'ignored' as const, at: new Date().toISOString() })));
+  return gone.length;
 }

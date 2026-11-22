@@ -5,6 +5,7 @@ import { hsbcParser } from './hsbc';
 import { iciciParser } from './icici';
 import { genericParse, isDeclined, isOtpOrSecurity, isPromotional, normaliseText, type BankParser, type EmailInput } from './common';
 import { applyTaughtTemplates } from './taught';
+import { ignoredBy } from './ignore';
 
 export type { EmailInput } from './common';
 
@@ -60,6 +61,8 @@ export interface ParseResult {
   bank: BankId | null;
   txns: ParsedTxn[];
   reason?: string;
+  /** Set when an "Ignore all like this" rule skipped the email. */
+  ignoreRule?: string;
 }
 
 export function parseEmail(email: EmailInput): ParseResult {
@@ -81,7 +84,11 @@ export function parseEmail(email: EmailInput): ParseResult {
     const g = genericParse(bank, text, email.receivedAt);
     if (g) txns = [g];
   }
-  if (txns.length === 0) return { status: 'unparsed', bank, txns: [], reason: 'No template matched' };
+  if (txns.length === 0) {
+    const rule = ignoredBy(bank, email.subject);
+    if (rule) return { status: 'ignored', bank, txns: [], reason: 'You chose to ignore emails like this', ignoreRule: rule.id };
+    return { status: 'unparsed', bank, txns: [], reason: 'No template matched' };
+  }
 
   // If the email failed sender authentication, never trust it fully.
   if (email.authenticated === false) {
