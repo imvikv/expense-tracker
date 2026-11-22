@@ -5,6 +5,7 @@ import { fetchEmail } from '../lib/gmail';
 import { AMOUNT_RE, findDate, normaliseText } from '../lib/parsers/common';
 import { buildTemplate, FIELD_LABELS, type BuildResult, type Spans, type TaughtField } from '../lib/parsers/taught';
 import { rereadNow } from '../lib/sync';
+import { db } from '../lib/db';
 import { BANK_LABELS, KIND_LABELS, type BankId, type Direction, type PaymentMethod, type TxnKind } from '../lib/types';
 import { Sheet } from './components';
 import { formatDate, formatINR, uid } from './format';
@@ -60,7 +61,7 @@ function suggest(text: string): { spans: Spans; direction: Direction } {
 }
 
 export function TeachSheet({ source, onClose }: { source: TeachSource | null; onClose: () => void }) {
-  const { addTemplate, rules, settings, reload, toast } = useStore();
+  const { addTemplate, rules, settings, reload, toast, setTask } = useStore();
   const [text, setText] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [spans, setSpans] = useState<Spans>({});
@@ -135,16 +136,25 @@ export function TeachSheet({ source, onClose }: { source: TeachSource | null; on
     if (!result || !('ok' in result)) return;
     setBusy('Saving…');
     try {
-      await addTemplate(result.ok.template);
-      if (accessToken()) {
-        setBusy('Re-reading emails the app didn’t understand…');
-        const r = await rereadNow({ rules, settings, onProgress: (p) => setBusy(`Re-reading emails… ${p.fetched} of ${p.total}`) });
-        await reload();
-        toast(`Template saved · ${r.added + r.updated} email${r.added + r.updated === 1 ? '' : 's'} now read${r.stillUnparsed ? ` · ${r.stillUnparsed} still not understood` : ''}`);
-      } else {
-        toast('Template saved · it will be applied on your next Sync');
-      }
+      const tpl = result.ok.template;
+      await addTemplate(tpl);
       onClose();
+      if (!accessToken()) {
+        toast('Template saved · it will be applied on your next Sync');
+        return;
+      }
+      // Re-read this bank's not-understood emails in the background, same subject first.
+      const subject = source.kind === 'email' ? source.subject : undefined;
+      const sameSubject = new Set(subject ? (await db.allUnparsed()).filter((u) => u.subject === subject).map((u) => u.id) : []);
+      setTask({ label: `Re-reading ${BANK_LABELS[source.bank]} emails`, done: 0, total: 0 });
+      rereadNow({ rules, settings, scope: { bank: source.bank }, first: (id) => sameSubject.has(id), onProgress: (p) => setTask({ label: `Re-reading ${BANK_LABELS[source.bank]} emails`, done: p.fetched, total: p.total }) })
+        .then(async (r) => {
+          await reload();
+          const read = r.added + r.updated;
+          toast(`Template saved · ${read} email${read === 1 ? '' : 's'} now read${r.stillUnparsed ? ` · ${r.stillUnparsed} still not understood` : ''}`);
+        })
+        .catch((e: Error) => toast(`Template saved, but re-reading stopped: ${e.message} It will continue on your next Sync.`))
+        .finally(() => setTask(null));
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not save');
     } finally {

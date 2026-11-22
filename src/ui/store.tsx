@@ -26,6 +26,9 @@ export interface Store {
   deleteTemplate(id: string): Promise<void>;
   toast(msg: string): void;
   toastMsg: string | null;
+  /** A long-running job shown at the top of the screen (e.g. re-reading emails). */
+  task: { label: string; done: number; total: number } | null;
+  setTask(t: { label: string; done: number; total: number } | null): void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -39,6 +42,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [unparsed, setUnparsed] = useState<UnparsedEmail[]>([]);
   const [toastMsg, setToast] = useState<string | null>(null);
   const [templates, setTemplates] = useState<CustomTemplate[]>([]);
+  const [task, setTask] = useState<Store['task']>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -154,8 +158,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Store>(
-    () => ({ ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, templates, addTemplate, deleteTemplate, toast, toastMsg }),
-    [ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, templates, addTemplate, deleteTemplate, toast, toastMsg],
+    () => ({ ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, templates, addTemplate, deleteTemplate, toast, toastMsg, task, setTask }),
+    [ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, templates, addTemplate, deleteTemplate, toast, toastMsg, task],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -6,7 +6,7 @@ import { AuthError, fetchEmail, GmailError, listMessageIds } from './gmail';
 import { gmailQuery, parseEmail, type EmailInput } from './parsers';
 import { applyEdit } from './prefs';
 import { syncPrefs } from './prefsSync';
-import { DETAIL_VERSION, PARSER_BUILD, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
+import { DETAIL_VERSION, PARSER_BUILD, type BankId, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
 
 export interface SyncProgress {
   phase: 'listing' | 'fetching' | 'updating' | 'finishing' | 'done';
@@ -93,12 +93,33 @@ export async function ingest(
 }
 
 /** Gmail message ids whose transactions predate the current payee-detail parser, plus emails no template understood. */
-export async function backfillCandidates(): Promise<string[]> {
+/** Which emails a re-read should cover. */
+export interface RereadScope {
+  /** Only this bank's emails (a taught template can't match other banks). */
+  bank?: BankId;
+}
+
+/**
+ * Gmail message ids worth fetching again:
+ * - transactions parsed before the current payee-detail parser (one-time after an upgrade);
+ * - fallback guesses and not-understood emails, but only when something changed that could
+ *   help: a new template was taught, or the built-in templates were updated.
+ */
+export async function backfillCandidates(scope: RereadScope = {}): Promise<string[]> {
   const [txns, unparsed, settings] = await Promise.all([db.allTransactions(), db.allUnparsed(), db.settings()]);
   const ids = new Set<string>();
-  const rereadGeneric = !!settings.pendingReread;
-  for (const t of txns) if (t.source === 'gmail' && ((t.detailVersion ?? 1) < DETAIL_VERSION || (t.template === 'generic' && (rereadGeneric || (t.parserBuild ?? 1) < PARSER_BUILD)))) ids.add(t.sourceMessageId);
-  for (const u of unparsed) if (!u.id.startsWith('sample') && !u.id.startsWith('fx')) ids.add(u.id);
+  const templatesChanged = !!settings.pendingReread;
+  const parsersChanged = (settings.rereadBuild ?? 0) < PARSER_BUILD;
+  const inScope = (bank?: BankId) => !scope.bank || bank === scope.bank;
+  for (const t of txns) {
+    if (t.source !== 'gmail' || !inScope(t.bank)) continue;
+    const outdated = !scope.bank && (t.detailVersion ?? 1) < DETAIL_VERSION;
+    const guess = t.template === 'generic' && (templatesChanged || parsersChanged || (t.parserBuild ?? 1) < PARSER_BUILD);
+    if (outdated || guess) ids.add(t.sourceMessageId);
+  }
+  if (templatesChanged || parsersChanged) {
+    for (const u of unparsed) if (!u.id.startsWith('sample') && !u.id.startsWith('fx') && inScope(u.bank)) ids.add(u.id);
+  }
   return [...ids];
 }
 
@@ -258,7 +279,7 @@ async function fetchAndIngest(
       }
     }
   };
-  await Promise.all(Array.from({ length: opts.concurrency ?? 4 }, worker));
+  await Promise.all(Array.from({ length: opts.concurrency ?? 5 }, worker));
   await flush(); // keep whatever we fetched even if something failed
   if (failure) {
     if (failure instanceof AuthError) dropToken();
@@ -270,27 +291,36 @@ async function fetchAndIngest(
 
 async function clearPendingReread(): Promise<void> {
   const s = await db.settings();
-  if (s.pendingReread) await db.saveSettings({ ...s, pendingReread: false });
+  if (s.pendingReread || (s.rereadBuild ?? 0) < PARSER_BUILD) await db.saveSettings({ ...s, pendingReread: false, rereadBuild: PARSER_BUILD });
 }
 
 /**
  * Re-read emails that weren't understood (and fallback guesses) right away, e.g. just
  * after the user taught a new template. Needs a Gmail connection.
  */
-export async function rereadNow(opts: { rules: MerchantRule[]; settings: Settings; onProgress?: (p: SyncProgress) => void }): Promise<{ added: number; updated: number; stillUnparsed: number }> {
+export async function rereadNow(opts: {
+  rules: MerchantRule[];
+  settings: Settings;
+  scope?: RereadScope;
+  /** Fetch these first (e.g. emails with the same subject as the one just taught). */
+  first?: (id: string) => boolean;
+  onProgress?: (p: SyncProgress) => void;
+}): Promise<{ added: number; updated: number; stillUnparsed: number }> {
   const progress: SyncProgress = { phase: 'updating', found: 0, skipped: 0, fetched: 0, total: 0, added: 0, updated: 0, removed: 0 };
   const report = () => opts.onProgress?.({ ...progress });
-  const ids = await backfillCandidates();
+  let ids = await backfillCandidates(opts.scope);
+  if (opts.first) ids = [...ids.filter(opts.first), ...ids.filter((id) => !opts.first!(id))];
   progress.total = ids.length;
   report();
   let stillUnparsed = 0;
-  const missing = await fetchAndIngest(ids, opts, progress, report, (r) => {
+  const missing = await fetchAndIngest(ids, { ...opts, concurrency: 6 }, progress, report, (r) => {
     progress.added += r.added;
     progress.updated += r.updated;
     stillUnparsed += r.unparsed;
   });
   await markGone(missing);
-  await clearPendingReread();
+  // A bank-scoped re-read covers that bank only; anything else waits for the next full Sync.
+  if (!opts.scope?.bank) await clearPendingReread();
   await refreshDuplicates();
   return { added: progress.added, updated: progress.updated, stillUnparsed };
 }

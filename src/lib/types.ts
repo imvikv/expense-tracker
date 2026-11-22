@@ -212,6 +212,8 @@ export interface Settings {
   prefsSyncedAt?: string;
   /** A template was taught: re-read not-understood and fallback-read emails on the next sync. */
   pendingReread?: boolean;
+  /** PARSER_BUILD at which not-understood emails were last retried. */
+  rereadBuild?: number;
   lastSyncAt?: string;
   /** Latest email date seen during sync (ISO), used for incremental sync. */
   syncedThrough?: string;

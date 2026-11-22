@@ -49,7 +49,7 @@ function Welcome({ onSync, onSettings }: { onSync: () => void; onSettings: () =>
 }
 
 function Shell() {
-  const { ready, error, txns, settings, toastMsg } = useStore();
+  const { ready, error, txns, settings, toastMsg, task } = useStore();
   const [tab, setTab] = useState<Tab>('home');
   const [filter, setFilter] = useState<TxnFilter>({});
   const [syncOpen, setSyncOpen] = useState(false);
@@ -83,6 +83,17 @@ function Shell() {
           <span>Sync</span>
         </button>
       </header>
+      {task && (
+        <div className="task-strip" role="status">
+          <span>
+            {task.label}
+            {task.total ? ` · ${task.done} of ${task.total}` : '…'}
+          </span>
+          <span className="task-track">
+            <span style={{ width: `${task.total ? Math.round((task.done / task.total) * 100) : 5}%` }} />
+          </span>
+        </div>
+      )}
 
       <main>
         {error && <p className="error page">Storage error: {error}</p>}
