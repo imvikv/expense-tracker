@@ -76,6 +76,11 @@ export const FIXTURES: Fixture[] = [
     expect: { bank: 'HDFC', direction: 'debit', amountPaise: 249900, merchant: 'Amazon', method: 'Credit Card', kind: 'expense', category: 'Shopping', last4: '4321', date: '2026-11-18T19:42:10', reference: '004512' },
   },
   {
+    name: 'HDFC card "Card XXnnnn" wording with a payment-gateway prefix',
+    email: email(H, 'A charge just happened on your Credit Card without OTP', 'Dear Card Member,\n\nThank you for using your HDFC Bank Card XX9876 for Rs. 2,417.92 at RAZ*KIERAYA FURNISHING on 30-10-2026 13:39:19 .\n\nAuthorization code:- 445566', '2026-10-30T08:10:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 241792, merchant: 'Kieraya', method: 'Credit Card', kind: 'expense', category: 'Rent and Housing', last4: '9876', date: '2026-10-30T13:39:19' },
+  },
+  {
     name: 'HDFC UPI debit',
     email: email(H, 'You have done a UPI txn. Check details!', 'Dear Customer,\n\nRs.340.00 has been debited from account **7788 to VPA zomato.payu@hdfcbank ZOMATO LIMITED on 20-11-26. Your UPI transaction reference number is 632415987001.', '2026-11-20T15:02:00Z'),
     expect: { bank: 'HDFC', direction: 'debit', amountPaise: 34000, merchant: 'Zomato', method: 'UPI', kind: 'expense', category: 'Food Delivery', last4: '7788', date: '2026-11-20T00:00:00', reference: '632415987001' },

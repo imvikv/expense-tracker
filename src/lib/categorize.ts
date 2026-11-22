@@ -38,6 +38,11 @@ export const MERCHANTS: MerchantDef[] = [
   { name: 'Tata CLiQ', match: /tata\s*cliq/i, category: 'Shopping' },
   { name: 'Meesho', match: /meesho/i, category: 'Shopping' },
   { name: 'IKEA', match: /\bikea\b/i, category: 'Shopping' },
+  { name: 'Furlenco', match: /furlenco/i, category: 'Rent and Housing' },
+  { name: 'RentoMojo', match: /rentomojo/i, category: 'Rent and Housing' },
+  { name: 'Kieraya', match: /kieraya/i, category: 'Rent and Housing' },
+  { name: 'Pepperfry', match: /pepperfry/i, category: 'Shopping' },
+  { name: 'Urban Ladder', match: /urban\s*ladder/i, category: 'Shopping' },
   { name: 'Decathlon', match: /decathlon/i, category: 'Shopping' },
   { name: 'Croma', match: /croma|infiniti retail/i, category: 'Shopping' },
   { name: 'Reliance Digital', match: /reliance digital/i, category: 'Shopping' },
@@ -116,8 +121,15 @@ export const MERCHANTS: MerchantDef[] = [
 const SUFFIXES = /\b(private|pvt|limited|ltd|llp|india|technologies|technology|tech|services|solutions|retail|co|company|inc)\b\.?/gi;
 
 /** Turn a raw merchant string into a tidy display name. */
+/** Payment-gateway prefixes card statements put before the real merchant: RAZ*KIERAYA, PAYU*SWIGGY, CCA*… */
+const GATEWAY_PREFIX = /^(?:raz(?:orpay)?|rzp|payu|pyu|cca(?:venue)?|ccav|bd|billdesk|paytm|ptm|phonepe|ppe|juspay|jp|cf|cashfree|eze|pine|pinelabs|gpay|gp|easebuzz|eb|sq|pp|paypal|ind|in|amzn|pg|ipay)\s*\*\s*/i;
+
+export function stripGateway(raw: string): string {
+  return raw.replace(GATEWAY_PREFIX, '');
+}
+
 export function normaliseMerchant(raw: string): string {
-  let s = raw.trim();
+  let s = stripGateway(raw.trim());
   if (!s) return 'Unknown';
   // VPA such as zomato.payu@hdfcbank -> zomato
   const vpa = /^([a-z0-9._-]+)@[a-z]+$/i.exec(s);
@@ -171,7 +183,8 @@ export function findRule(rules: MerchantRule[], t: RuleSubject, need?: (r: Merch
 export function payeeRulePattern(t: Pick<Transaction, 'payeeVpa' | 'merchant' | 'merchantRaw'>): string {
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   if (t.payeeVpa) return `/^${esc(t.payeeVpa)}$/`;
-  return `/^${esc(t.merchantRaw || t.merchant)}$/`;
+  if (!t.merchantRaw?.trim()) throw new Error('This payment has no payee to match others by. Name just this payment instead.');
+  return `/^${esc(t.merchantRaw)}$/`;
 }
 
 function matchesOwn(own: string[], ...fields: Array<string | undefined>): boolean {
@@ -336,7 +349,8 @@ export function buildTransaction(
 }
 
 function classifyStored(t: Transaction, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers' | 'billSpendCards'>): Classification {
-  return classify({ ...t, kindHint: t.parserKind }, rules, settings);
+  const c = classify({ ...t, kindHint: t.parserKind }, rules, settings);
+  return t.customName ? { ...c, merchant: t.customName } : c;
 }
 
 /**
@@ -374,18 +388,26 @@ export function mergeDetails(old: Transaction, fresh: Transaction): Transaction 
   };
   // A guess by the generic reader that a bank template now understands: take the new reading
   // wholesale (amount, direction, date, accounts), keeping only the user's own decisions.
-  if (old.template === 'generic' && fresh.template !== 'generic' && !old.userEdited) {
-    return { ...fresh, id: old.id, excluded: old.excluded, note: old.note, duplicateStatus: 'none', duplicateOf: undefined, createdAt: old.createdAt, subject: fresh.subject ?? old.subject };
+  const betterRead = (old.template === 'generic' && fresh.template !== 'generic') || (old.merchant === 'Unknown' && fresh.merchant !== 'Unknown');
+  if (betterRead && !old.userEdited) {
+    return { ...fresh, id: old.id, excluded: old.excluded, note: old.note, customName: old.customName, merchant: old.customName ?? fresh.merchant, editedAt: old.editedAt, duplicateStatus: 'none', duplicateOf: undefined, createdAt: old.createdAt, subject: fresh.subject ?? old.subject };
   }
-  if (old.userEdited) return { ...base, payeeType: fresh.payeeType, merchant: fresh.merchant };
-  return { ...base, payeeType: fresh.payeeType, merchant: fresh.merchant, merchantRaw: fresh.merchantRaw, kind: fresh.kind, category: fresh.category, parserKind: fresh.parserKind, template: fresh.template, confidence: fresh.confidence };
+  if (old.userEdited) return { ...base, payeeType: fresh.payeeType, merchant: old.customName ?? fresh.merchant };
+  return { ...base, payeeType: fresh.payeeType, merchant: old.customName ?? fresh.merchant, merchantRaw: fresh.merchantRaw, kind: fresh.kind, category: fresh.category, parserKind: fresh.parserKind, template: fresh.template, confidence: fresh.confidence };
 }
 
 /** Stable key identifying one counterparty across transactions. */
-export function payeeKey(t: Pick<Transaction, 'payeeVpa' | 'payeeAccount' | 'merchant' | 'bank'>): string {
+export function payeeKey(t: Pick<Transaction, 'payeeVpa' | 'payeeAccount' | 'merchant' | 'bank'> & Partial<Pick<Transaction, 'id' | 'merchantRaw' | 'customName'>>): string {
   if (t.payeeVpa) return `vpa:${t.payeeVpa.toLowerCase()}`;
   if (t.payeeAccount) return `acct:${t.payeeAccount}`;
+  // No usable payee from the bank: never lump these together.
+  if (isAnonymous(t)) return `txn:${t.id ?? Math.random()}`;
   return `name:${t.merchant.toLowerCase()}`;
+}
+
+/** The email gave no payee name, UPI ID or account, so this payment can't be matched to others. */
+export function isAnonymous(t: Partial<Pick<Transaction, 'payeeVpa' | 'payeeAccount' | 'merchant' | 'merchantRaw' | 'customName'>>): boolean {
+  return !t.payeeVpa && !t.payeeAccount && !(t.merchantRaw ?? '').trim() && (!t.merchant || t.merchant === 'Unknown' || t.merchant === t.customName);
 }
 
 export interface CardBillSummary {

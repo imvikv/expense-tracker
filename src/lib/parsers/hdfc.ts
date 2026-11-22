@@ -43,7 +43,9 @@ const T: Template[] = [
   },
   {
     name: 'hdfc.card.used',
-    re: rx(String.raw`using (?:your )?HDFC Bank (?:Credit|Debit) Card ending (\d{4}) for {AMT} at (.+?) on \d`),
+    // "...using your HDFC Bank Credit Card ending 4321 for Rs X at M on ..." and
+    // "...using your HDFC Bank Card XX1639 for Rs. X at M on ..."
+    re: rx(String.raw`using (?:your )?HDFC Bank (?:(?:Credit|Debit) )?Card (?:ending |no\.? )?(?:XX|[x*]+)?\s*(\d{4}) for {AMT} at (.+?) on \d`),
     direction: 'debit',
     amount: 2,
     account: 1,

@@ -90,6 +90,14 @@ export function parseEmail(email: EmailInput): ParseResult {
     return { status: 'unparsed', bank, txns: [], reason: 'No template matched' };
   }
 
+  // "HDFC Bank Card XX1639" doesn't say credit or debit; the subject often does.
+  for (const t of txns) {
+    if (t.method === 'Unknown') {
+      if (/\bcredit\s*card\b/i.test(subject)) t.method = 'Credit Card';
+      else if (/\bdebit\s*card\b/i.test(subject)) t.method = 'Debit Card';
+    }
+  }
+
   // If the email failed sender authentication, never trust it fully.
   if (email.authenticated === false) {
     for (const t of txns) t.confidence = 'low';

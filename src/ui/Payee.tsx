@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { categoryForKind, payeeKey, payeeRulePattern } from '../lib/categorize';
+import { categoryForKind, isAnonymous, payeeKey, payeeRulePattern } from '../lib/categorize';
 import { spendPaise } from '../lib/analytics';
 import { gmailLink } from '../lib/gmail';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type Category, type PayeeType, type Transaction, type TxnKind } from '../lib/types';
@@ -56,7 +56,9 @@ export function PayeeDetails({ t }: { t: Transaction }) {
  * (matched by UPI ID when available, otherwise by the name the bank uses).
  */
 export function IdentifyPayee({ sample, count, onDone }: { sample: Transaction; count: number; onDone: () => void }) {
-  const { addRule, toast } = useStore();
+  const { addRule, updateTxns, toast } = useStore();
+  // No payee name, UPI ID or account in the email: changes can only apply to this payment.
+  const single = isAnonymous(sample);
   const [label, setLabel] = useState('');
   const [ptype, setPtype] = useState<PayeeType>(sample.payeeType && sample.payeeType !== 'unknown' ? sample.payeeType : 'person');
   const [kind, setKind] = useState<TxnKind>(sample.kind);
@@ -90,6 +92,15 @@ export function IdentifyPayee({ sample, count, onDone }: { sample: Transaction; 
   const save = async () => {
     setBusy(true);
     try {
+      if (single) {
+        const name = label.trim();
+        await updateTxns([
+          { ...sample, customName: name || undefined, merchant: name || sample.merchant, payeeType: ptype, kind, category, userEdited: true, confidence: 'high', editedAt: new Date().toISOString() },
+        ]);
+        toast('Saved for this payment');
+        onDone();
+        return;
+      }
       const n = await addRule({
         id: uid(),
         pattern: payeeRulePattern(sample),
@@ -109,8 +120,8 @@ export function IdentifyPayee({ sample, count, onDone }: { sample: Transaction; 
   return (
     <div className="form identify">
       <label>
-        What do you call them?
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={`e.g. ${ptype === 'person' ? 'Sunita (house help)' : 'Corner grocery'}`} maxLength={40} />
+        {single ? 'What was this payment for?' : 'What do you call them?'}
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={single ? 'e.g. Sofa rental, Diwali gifts' : `e.g. ${ptype === 'person' ? 'Sunita (house help)' : 'Corner grocery'}`} maxLength={40} />
       </label>
       <div className="seg" role="radiogroup" aria-label="Who is this">
         {(['person', 'merchant', 'own'] as PayeeType[]).map((p) => (
@@ -139,11 +150,15 @@ export function IdentifyPayee({ sample, count, onDone }: { sample: Transaction; 
           </select>
         </label>
       </div>
-      <p className="hint">
-        Applies to all {count} payment{count === 1 ? '' : 's'} matched by {matchBy}, and to future ones. Manual edits on single transactions are kept.
-      </p>
+      {single ? (
+        <p className="hint">The bank’s email doesn’t say who was paid (no name, UPI ID or account), so this applies to <strong>this payment only</strong>. Tip: if other emails of this kind do name the merchant, use Teach on one and mark the payee.</p>
+      ) : (
+        <p className="hint">
+          Applies to all {count} payment{count === 1 ? '' : 's'} matched by {matchBy}, and to future ones. Manual edits on single transactions are kept.
+        </p>
+      )}
       <button className="btn primary" onClick={save} disabled={busy}>
-        Save for all payments to this payee
+        {single ? 'Save for this payment' : 'Save for all payments to this payee'}
       </button>
     </div>
   );

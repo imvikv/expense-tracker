@@ -125,7 +125,7 @@ export const DETAIL_VERSION = 2;
  * Bump whenever bank templates are added or improved. Transactions that only the
  * low-confidence generic reader understood are re-read once per bump.
  */
-export const PARSER_BUILD = 4;
+export const PARSER_BUILD = 5;
 
 export interface Transaction extends PayeeInfo {
   id: string;
@@ -164,6 +164,8 @@ export interface Transaction extends PayeeInfo {
   detailVersion?: number;
   /** Template set used when this was parsed (see PARSER_BUILD). */
   parserBuild?: number;
+  /** Name the user gave this one payment (when the bank gave no usable payee). Wins over rules. */
+  customName?: string;
   /** When the user last changed this transaction by hand (category, note, exclude, duplicate decision). */
   editedAt?: string;
   createdAt: string;

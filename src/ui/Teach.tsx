@@ -238,6 +238,11 @@ export function TeachSheet({ source, onClose }: { source: TeachSource | null; on
           </div>
 
           {result && 'error' in result && <p className="error">{result.error}</p>}
+          {preview && !spans.payee && !spans.payeeAccount && (
+            <p className="notice warn">
+              No payee marked. If the email names who was paid (a merchant, person or account), mark it with <strong>Paid to / from</strong> — otherwise every email of this kind shows as “Unknown” and has to be named one by one.
+            </p>
+          )}
           {!spans.amount && <p className="hint">Mark the amount to continue.</p>}
           {preview && (
             <div className="notice">

@@ -85,7 +85,9 @@ export async function ingest(
       const old = existing.get(t.id);
       if (!old) return false;
       // Older parser generation, or a generic low-confidence read that a bank template now understands.
-      return (old.detailVersion ?? 1) < DETAIL_VERSION || (old.template === 'generic' && (t.template !== 'generic' || (old.parserBuild ?? 1) < PARSER_BUILD));
+      if ((old.detailVersion ?? 1) < DETAIL_VERSION) return true;
+      if (old.template === 'generic' && (t.template !== 'generic' || (old.parserBuild ?? 1) < PARSER_BUILD)) return true;
+      return old.merchant === 'Unknown' && !old.customName && t.merchant !== 'Unknown';
     })
     .map((t) => mergeDetails(existing.get(t.id)!, t));
   const added = await db.insertNewTransactions(toInsert);
@@ -119,7 +121,8 @@ export async function backfillCandidates(scope: RereadScope = {}): Promise<strin
   for (const t of txns) {
     if (t.source !== 'gmail' || !inScope(t.bank)) continue;
     const outdated = !scope.bank && (t.detailVersion ?? 1) < DETAIL_VERSION;
-    const guess = t.template === 'generic' && (templatesChanged || parsersChanged || (t.parserBuild ?? 1) < PARSER_BUILD);
+    const weak = t.template === 'generic' || t.merchant === 'Unknown';
+    const guess = weak && !t.customName && (templatesChanged || parsersChanged || (t.parserBuild ?? 1) < PARSER_BUILD);
     if (outdated || guess) ids.add(t.sourceMessageId);
   }
   if (templatesChanged || parsersChanged) {

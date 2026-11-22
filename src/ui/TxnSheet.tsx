@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { categoryForKind, payeeKey } from '../lib/categorize';
+import { categoryForKind, isAnonymous, payeeKey } from '../lib/categorize';
 import { gmailLink } from '../lib/gmail';
 import { db } from '../lib/db';
 import { schedulePrefsSync } from '../lib/prefsSync';
@@ -103,13 +103,13 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
 
       <PayeeDetails t={txn} />
       <div className="btn-row tight">
-        {samePayee > 1 && onShowPayee && (
+        {samePayee > 1 && onShowPayee && !isAnonymous(txn) && (
           <button className="btn ghost" onClick={() => onShowPayee(key)}>
             All {samePayee} payments to them
           </button>
         )}
         <button className={`btn ${identify ? 'ghost' : ''}`} onClick={() => setIdentify((v) => !v)} aria-expanded={identify}>
-          {identify ? 'Hide' : 'Name / categorise payee'}
+          {identify ? 'Hide' : isAnonymous(txn) ? 'Name this payment' : 'Name / categorise payee'}
         </button>
       </div>
       {identify && (

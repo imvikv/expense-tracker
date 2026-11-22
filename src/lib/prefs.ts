@@ -16,6 +16,7 @@ export interface TxnEdit {
   userEdited?: boolean;
   excluded?: boolean;
   note?: string;
+  customName?: string;
   duplicateStatus?: DuplicateStatus;
   duplicateOf?: string;
   /** "Not a transaction — remove". */
@@ -53,7 +54,7 @@ export function emptyDoc(): PrefsDoc {
 /** The user-made parts of a transaction, or null when it carries no user decision. */
 export function editOf(t: Transaction): TxnEdit | null {
   // Edits made before sync existed have no timestamp: date them by creation so any newer edit wins.
-  const legacy = !t.editedAt && (t.userEdited || t.excluded || !!t.note || t.duplicateStatus === 'not_duplicate');
+  const legacy = !t.editedAt && (t.userEdited || t.excluded || !!t.note || !!t.customName || t.duplicateStatus === 'not_duplicate');
   if (!t.editedAt && !legacy) return null;
   return {
     at: t.editedAt ?? t.createdAt,
@@ -62,6 +63,7 @@ export function editOf(t: Transaction): TxnEdit | null {
     userEdited: t.userEdited || undefined,
     excluded: t.excluded || undefined,
     note: t.note || undefined,
+    customName: t.customName || undefined,
     duplicateStatus: t.duplicateStatus === 'duplicate' || t.duplicateStatus === 'not_duplicate' ? t.duplicateStatus : undefined,
     duplicateOf: t.duplicateOf,
   };
@@ -78,6 +80,8 @@ export function applyEdit(t: Transaction, e: TxnEdit): Transaction {
     confidence: e.userEdited ? 'high' : t.confidence,
     excluded: !!e.excluded,
     note: e.note,
+    customName: e.customName,
+    merchant: e.customName ?? t.merchant,
     duplicateStatus: e.duplicateStatus ?? t.duplicateStatus,
     duplicateOf: e.duplicateStatus ? e.duplicateOf : t.duplicateOf,
     editedAt: e.at,
@@ -158,6 +162,7 @@ export function parseDoc(json: string): PrefsDoc {
       userEdited: e.userEdited === true || undefined,
       excluded: e.excluded === true || undefined,
       note: typeof e.note === 'string' ? e.note.slice(0, 200) : undefined,
+      customName: typeof e.customName === 'string' ? e.customName.slice(0, 40) : undefined,
       duplicateStatus: e.duplicateStatus === 'duplicate' || e.duplicateStatus === 'not_duplicate' ? e.duplicateStatus : undefined,
       duplicateOf: typeof e.duplicateOf === 'string' ? e.duplicateOf : undefined,
       removed: e.removed === true || undefined,

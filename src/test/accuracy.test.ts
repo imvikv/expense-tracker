@@ -354,3 +354,31 @@ test('IMPS transfers record the receiving account; marking it as yours makes it 
   assert.equal(mine.payeeType, 'own');
   assert.equal(mine.kind, 'transfer');
 });
+
+// ---------------- Unknown payees ----------------
+
+test('payments with no payee are never grouped, and can be named one at a time', () => {
+  const a = txn({ merchantRaw: '', amountPaise: 1000 });
+  const b = txn({ merchantRaw: '', amountPaise: 2000 });
+  assert.equal(a.merchant, 'Unknown');
+  assert.notEqual(payeeKey(a), payeeKey(b));
+  assert.throws(() => payeeRulePattern(a), /no payee/);
+  const named = { ...a, customName: 'Sofa rental', merchant: 'Sofa rental', userEdited: true, category: 'Rent and Housing' as const };
+  const [after] = reapplyRules([named], [{ id: 'r', pattern: 'unknown', label: 'X', category: 'Shopping', createdAt: '2026-01-01' }], { ownIdentifiers: [] }).concat([named]);
+  assert.equal(after.merchant, 'Sofa rental', 'a name given to one payment survives rules');
+  const refreshed = mergeDetails(named, { ...txn({ merchantRaw: '' }), id: named.id });
+  assert.equal(refreshed.merchant, 'Sofa rental', '…and re-reading the email');
+});
+
+test('a better read replaces an Unknown payee', () => {
+  const old = txn({ merchantRaw: '' });
+  const fresh = { ...txn({ merchantRaw: 'RAZ*KIERAYA FURNISHING' }), id: old.id };
+  const m = mergeDetails(old, fresh);
+  assert.equal(m.merchant, 'Kieraya');
+});
+
+test('payment-gateway prefixes are stripped from merchant names', () => {
+  assert.equal(normaliseMerchant('RAZ*SOME LOCAL SHOP'), 'Some Local Shop');
+  assert.equal(normaliseMerchant('PAYU*SWIGGY'), 'Swiggy');
+  assert.equal(normaliseMerchant('CCA*ACME TRAVELS'), 'Acme Travels');
+});
