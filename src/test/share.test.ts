@@ -8,6 +8,7 @@ test('shared formats keep the wording but drop personal details', () => {
     ['Transaction Amount: INR 2052\nMerchant Name: PYU*Flipkar\nAxis Bank Credit Card No. XX6754\nDate & Time: 08-10-2026, 11:26:53 IST', [/Merchant Name: PAYEE NAME/, /Axis Bank Credit Card No\. XX0000/], [/Flipkar|6754|2052/]],
     ['Rs.340.00 has been debited from account **7788 to VPA zomato.payu@hdfcbank ZOMATO LIMITED on 20-11-26.', [/to VPA name@bank/], [/zomato\.payu|7788/]],
     ['INR 62,000.00 has been debited from your account ending xxxxxxxxxx8848 on 05-11-26 and credited to the account ending xxxxxxxxxx8611 via IMPS.', [/debited from your account ending xxxxxxxxxx0000 on 00-00-00 and credited to the account ending/], [/8848|8611|62,000/]],
+    ['Date Time: 12 Sep, 2026 at 14:05:11. Call HDFC Bank Helpline at 18002586161. Please allow up to 72 hours', [/at 00:00:00\./, /Helpline at 00000000000/, /up to 00 hours/], [/PAYEE NAME/]],
   ];
   for (const [input, keep, gone] of cases) {
     const out = redactForShare(input);

@@ -128,12 +128,28 @@ export function stripGateway(raw: string): string {
   return raw.replace(GATEWAY_PREFIX, '');
 }
 
+/** UPI IDs from merchant QR codes carry no name: label them by app plus a short tail. */
+function vpaLabel(local: string): string | null {
+  const tail = (local.match(/\d+/g)?.join('') ?? local).slice(-4);
+  if (/^paytmqr|^paytm-?\d/i.test(local)) return `Paytm QR merchant ••${tail}`;
+  if (/^bharatpe/i.test(local)) return `BharatPe merchant ••${tail}`;
+  if (/^q\d{5,}/i.test(local)) return `PhonePe QR merchant ••${tail}`;
+  if (/^gpay-?\d+/i.test(local)) return `Google Pay merchant ••${tail}`;
+  if (/^(mab|bqr|pos)\.?\d+/i.test(local) || /^\d{8,}$/.test(local)) return `UPI QR merchant ••${tail}`;
+  return null;
+}
+
 export function normaliseMerchant(raw: string): string {
   let s = stripGateway(raw.trim());
   if (!s) return 'Unknown';
-  // VPA such as zomato.payu@hdfcbank -> zomato
-  const vpa = /^([a-z0-9._-]+)@[a-z]+$/i.exec(s);
-  if (vpa) s = vpa[1].split(/[._-]/)[0];
+  // VPA such as zomato.payu@hdfcbank -> zomato; merchant QR codes get a readable label.
+  const vpa = /^([a-z0-9._•-]+)@([a-z][a-z0-9]*)$/i.exec(s);
+  if (vpa) {
+    for (const m of MERCHANTS) if (m.match.test(vpa[1])) return m.name;
+    const qr = vpaLabel(vpa[1]);
+    if (qr) return qr;
+    s = vpa[1].split(/[._-]/).find((p) => /^[a-z]{3,}$/i.test(p)) ?? vpa[1].split(/[._-]/)[0];
+  }
   for (const m of MERCHANTS) if (m.match.test(s)) return m.name;
   const acct = /^(?:to\s+)?(?:account|a\/c|acct)\s*(?:no\.?\s*)?[*xX•]*\s*(\d{3,})/i.exec(s);
   if (acct) return `Account ••${acct[1].slice(-4)}`;

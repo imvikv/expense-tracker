@@ -130,6 +130,31 @@ export const FIXTURES: Fixture[] = [
     email: email(H, 'Funds credited alert', 'Dear Customer,\n\nINR 12,000.00 has been credited to your account ending xxxxxxxxxx7788 on 07-11-26 and debited from the account ending xxxxxxxxxx9012 via NEFT.\n\nNEFT Reference No: N311260001234567', '2026-11-07T06:00:00Z'),
     expect: { bank: 'HDFC', direction: 'credit', amountPaise: 1200000, merchant: 'Account ••9012', method: 'Bank Transfer', kind: 'income', last4: '7788', date: '2026-11-07T00:00:00' },
   },
+  {
+    name: 'HDFC RuPay credit card UPI payment (Paid to <UPI ID>)',
+    email: email(H, '❗ You have done a UPI txn. Check details!', "Dear Customer,\nGreetings from HDFC Bank! \nWe're sharing this alert to help you quickly check a recent UPI transaction made using your RuPay Credit Card. \n Transaction Details:\nRs.45.00 has been debited from your RuPay Credit Card (ending 4321) \nPaid to blinkit.payu@axisbank \nDate: 05-11-26\nUPI Transaction Reference Number: 632400001111\nImportant Note: \nIf you made this transaction, no action is needed.", '2026-11-05T09:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 4500, merchant: 'Blinkit', method: 'Credit Card', kind: 'expense', category: 'Groceries', last4: '4321', date: '2026-11-05T00:00:00', reference: '632400001111' },
+  },
+  {
+    name: 'HDFC RuPay credit card UPI payment to a merchant QR',
+    email: email(H, '❗ You have done a UPI txn. Check details!', 'Transaction Details:\nRs.120.00 has been debited from your RuPay Credit Card (ending 4321) \nPaid to paytmqr281005050101xyz@paytm \nDate: 06-11-26\nUPI Transaction Reference Number: 632400002222', '2026-11-06T09:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 12000, merchant: 'Paytm QR merchant ••0101', method: 'Credit Card', kind: 'expense', last4: '4321', date: '2026-11-06T00:00:00' },
+  },
+  {
+    name: 'HDFC UPI credit with "Transaction Details" list (Sender + VPA)',
+    email: email(H, 'View: Account update for your HDFC Bank A/c', "Dear Customer,\nGreetings from HDFC Bank!\nWe're writing to inform you that Rs.1250.00 has been successfully credited to your HDFC Bank account ending in 7788.\nTransaction Details: \na. Date: 07-11-26 \nb. Sender: DELHIVERY (VPA: delhivery.cod@hdfcbank) \nc. UPI Reference No.: 632400003333 \nNeed Help?", '2026-11-07T09:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'credit', amountPaise: 125000, merchant: 'Delhivery', method: 'UPI', kind: 'income', last4: '7788', date: '2026-11-07T00:00:00', reference: '632400003333' },
+  },
+  {
+    name: 'HDFC debit card "ending with"',
+    email: email(H, 'Transaction Alert: Check details now!', 'Dear Customer, \nThank you for using HDFC Bank Debit Card ending with 1122 for Rs. 640.00 at MORE RETAIL on 09-11-2026 19:20:05. \nFor more details on this transaction, please visit Netbanking. \nNot you? Please sms BLOCK DEBIT CARD 1122 to 7308080808 to block the card immediately. \nRegards \nHDFC Bank \n For more details on Service charges and Fees, click here.', '2026-11-09T13:50:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 64000, merchant: 'More Retail', method: 'Debit Card', kind: 'expense', category: 'Groceries', last4: '1122', date: '2026-11-09T19:20:05' },
+  },
+  {
+    name: 'HDFC credit card reversal "From Merchant / Date Time"',
+    email: email(H, 'A refund was processed to your Credit Card from the merchant', 'Dear Customer,\nGreetings from HDFC Bank!\nA transaction reversal of Rs. 299.00 has been initiated to your HDFC Bank Credit Card ending 4321 \n From Merchant: ADANI DIGITAL LABS PRI\n Date Time: 12 Sep, 2026 at 14:05:11\nPlease allow up to 72 hours for the reversal to reflect in your card statement.', '2026-09-12T09:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'credit', amountPaise: 29900, merchant: 'Adani Digital Labs Pri', method: 'Credit Card', kind: 'refund', last4: '4321', date: '2026-09-12T14:05:11' },
+  },
   // ---------------- ICICI ----------------
   {
     name: 'ICICI credit card',
@@ -217,6 +242,11 @@ export const FIXTURES: Fixture[] = [
     name: 'HSBC credit card',
     email: email(S, 'HSBC Credit Card transaction alert', 'Dear Customer,\n\nYour HSBC Credit Card ending with 1357 has been used for INR 3,200.00 at TATA CLIQ on 19 Nov 2026 at 15:40. If you have not done this transaction, please call PhoneBanking.', '2026-11-19T10:11:00Z'),
     expect: { bank: 'HSBC', direction: 'debit', amountPaise: 320000, merchant: 'Tata CLiQ', method: 'Credit Card', kind: 'expense', category: 'Shopping', last4: '1357', date: '2026-11-19T15:40:00' },
+  },
+  {
+    name: 'HSBC credit card "was used for a transaction of"',
+    email: email(S, 'Credit Card Transaction Alert', 'This e-mail has been sent by The Hongkong and Shanghai Banking Corporation Limited,\n India Branch, 52/60, Mahatma Gandhi Road, Fort, Mumbai - 400 001. Customer service\n hotline numbers . \n Dear Customer, \n We’re writing to confirm that your HSBC Credit Card xx1357 was used for a transaction of INR 499.00 at NETFLIX COM on 14/11/26. \n Available limit: INR 1500000.00\n Amount due: INR 499.00', '2026-11-14T09:00:00Z'),
+    expect: { bank: 'HSBC', direction: 'debit', amountPaise: 49900, merchant: 'Netflix', method: 'Credit Card', kind: 'expense', category: 'Subscriptions', last4: '1357', date: '2026-11-14T00:00:00' },
   },
   {
     name: 'HSBC account debit to broker (investment)',

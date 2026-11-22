@@ -356,7 +356,8 @@ export function make(
     merchantRaw: merchant,
     accountLast4: fields.accountLast4 ?? findAccountLast4(fields.text),
     reference: fields.reference ?? findUpiRef(fields.text) ?? findAuthCode(fields.text),
-    kindHint: fields.kindHint ?? detectKindHint(fields.text, fields.direction, method),
+    // Judge refund/fee/ATM wording from the transaction sentence only: footers mention "Service charges and Fees".
+    kindHint: fields.kindHint ?? detectKindHint(narration || fields.text, fields.direction, method),
     confidence,
     template,
     payee,

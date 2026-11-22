@@ -22,7 +22,8 @@ export function redactForShare(raw: string): string {
     // Replace name tokens up to the first bank/keyword token ("Axis Bank …", "on", "via").
     const tokens = words.split(/(?<=\s)/);
     let i = 0;
-    while (i < tokens.length && !KEEP.test(tokens[i].trim())) i++;
+    // Numbers (times, phone numbers, "72 hours") aren't names: leave them for the digit pass.
+    while (i < tokens.length && !KEEP.test(tokens[i].trim()) && /[A-Za-z]/.test(tokens[i])) i++;
     if (i === 0) return m;
     const kept = tokens.slice(i).join('');
     const tail = /\s$/.test(tokens[i - 1]) ? ' ' : '';

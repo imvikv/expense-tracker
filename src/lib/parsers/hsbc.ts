@@ -4,6 +4,17 @@ const END = String.raw`(?:\.\s|\.$|\sAvl|\sAvailable|\n|$)`;
 
 const T: Template[] = [
   {
+    // your HSBC Credit Card xx1234 was used for a transaction of INR 450.00 at MERCHANT on 05/11/26.
+    name: 'hsbc.cc.transaction',
+    re: rx(String.raw`HSBC Credit Card (?:xx|ending (?:with )?|no\.? )?\s*(\d{4}) (?:was|has been) used for a transaction of {AMT} at (.+?) on (\d{1,2}/\d{1,2}/\d{2,4}|\S+)`),
+    direction: 'debit',
+    method: 'Credit Card',
+    amount: 2,
+    account: 1,
+    merchant: 3,
+    date: 4,
+  },
+  {
     name: 'hsbc.cc.used',
     re: rx(String.raw`HSBC Credit Card ending (?:with )?(\d{4}) has been used for {AMT} at (.+?) on \d`),
     direction: 'debit',
