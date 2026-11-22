@@ -1,23 +1,20 @@
 import { useEffect, useState } from 'react';
-import { categoryForKind } from '../lib/categorize';
+import { categoryForKind, payeeKey } from '../lib/categorize';
 import { gmailLink } from '../lib/gmail';
 import { spendPaise } from '../lib/analytics';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type Category, type Transaction, type TxnKind } from '../lib/types';
 import { Sheet } from './components';
-import { formatDate, formatINR, uid } from './format';
+import { formatDate, formatINR } from './format';
+import { IdentifyPayee, PayeeDetails } from './Payee';
 import { useStore } from './store';
 
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-}
-
-export function TxnSheet({ txn, onClose }: { txn: Transaction | null; onClose: () => void }) {
-  const { txns, updateTxns, addRule, toast } = useStore();
+export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | null; onClose: () => void; onShowPayee?: (key: string) => void }) {
+  const { txns, updateTxns, toast } = useStore();
   const [category, setCategory] = useState<Category>('Uncategorized');
   const [kind, setKind] = useState<TxnKind>('expense');
   const [excluded, setExcluded] = useState(false);
   const [note, setNote] = useState('');
-  const [applyAll, setApplyAll] = useState(false);
+  const [identify, setIdentify] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -26,29 +23,21 @@ export function TxnSheet({ txn, onClose }: { txn: Transaction | null; onClose: (
     setKind(txn.kind);
     setExcluded(txn.excluded);
     setNote(txn.note ?? '');
-    setApplyAll(false);
+    setIdentify(txn.category === 'Uncategorized' && txn.kind === 'expense');
   }, [txn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!txn) return null;
   const original = txn.duplicateOf ? txns.find((t) => t.id === txn.duplicateOf) : undefined;
-  const sameMerchant = txns.filter((t) => t.merchant === txn.merchant).length;
+  const key = payeeKey(txn);
+  const samePayee = txns.filter((t) => payeeKey(t) === key).length;
   const dirty = category !== txn.category || kind !== txn.kind || excluded !== txn.excluded || note !== (txn.note ?? '');
 
   const save = async () => {
     setBusy(true);
     try {
-      const updated: Transaction = { ...txn, category, kind, excluded, note: note.trim() || undefined, userEdited: txn.userEdited || category !== txn.category || kind !== txn.kind, confidence: 'high' };
-      await updateTxns([updated]);
-      if (applyAll) {
-        const n = await addRule({
-          id: uid(),
-          pattern: `/^${escapeRe(txn.merchant)}$/`,
-          category,
-          kind: kind !== txn.kind || txn.userEdited ? kind : undefined,
-          createdAt: new Date().toISOString(),
-        });
-        toast(`Rule saved · ${n} other transaction${n === 1 ? '' : 's'} updated`);
-      } else toast('Saved');
+      const changedClass = category !== txn.category || kind !== txn.kind;
+      await updateTxns([{ ...txn, category, kind, excluded, note: note.trim() || undefined, userEdited: txn.userEdited || changedClass, confidence: changedClass ? 'high' : txn.confidence }]);
+      toast('Saved');
       onClose();
     } finally {
       setBusy(false);
@@ -63,7 +52,7 @@ export function TxnSheet({ txn, onClose }: { txn: Transaction | null; onClose: (
 
   const onKind = (k: TxnKind) => {
     setKind(k);
-    setCategory((c) => (k === 'expense' ? (c === 'Transfers' || c === 'Income' || c === 'Credit Card Payment' ? 'Uncategorized' : c) : categoryForKind(k, c)));
+    setCategory((c) => (k === 'expense' ? (['Transfers', 'Income', 'Credit Card Payment'].includes(c) ? 'Uncategorized' : c) : categoryForKind(k, c)));
   };
 
   return (
@@ -73,7 +62,9 @@ export function TxnSheet({ txn, onClose }: { txn: Transaction | null; onClose: (
           {txn.direction === 'credit' ? '+' : '−'}
           {formatINR(txn.amountPaise, { decimals: true })}
         </span>
-        <small>{spendPaise(txn) === 0 ? 'Not counted in spending' : spendPaise(txn) < 0 ? 'Reduces spending' : 'Counted in spending'}</small>
+        <small>
+          {formatDate(txn.date, { time: txn.hasTime, year: true })} · {spendPaise(txn) === 0 ? 'not counted in spending' : spendPaise(txn) < 0 ? 'reduces spending' : 'counted in spending'}
+        </small>
       </div>
 
       {txn.duplicateStatus === 'suspected' && (
@@ -93,27 +84,36 @@ export function TxnSheet({ txn, onClose }: { txn: Transaction | null; onClose: (
       )}
       {txn.duplicateStatus === 'duplicate' && (
         <div className="notice">
-          <p>
-            Hidden as a duplicate{original ? ` of ${original.merchant} on ${formatDate(original.date)}` : ''} (same reference number).
-          </p>
+          <p>Hidden as a duplicate{original ? ` of ${original.merchant} on ${formatDate(original.date)}` : ''} (same reference number).</p>
           <button className="btn ghost" onClick={() => setDup('not_duplicate')}>
             Not a duplicate — count it
           </button>
         </div>
       )}
 
+      <PayeeDetails t={txn} />
+      <div className="btn-row tight">
+        {samePayee > 1 && onShowPayee && (
+          <button className="btn ghost" onClick={() => onShowPayee(key)}>
+            All {samePayee} payments to them
+          </button>
+        )}
+        <button className={`btn ${identify ? 'ghost' : ''}`} onClick={() => setIdentify((v) => !v)} aria-expanded={identify}>
+          {identify ? 'Hide' : 'Name / categorise payee'}
+        </button>
+      </div>
+      {identify && (
+        <div className="card inset">
+          <IdentifyPayee sample={txn} count={samePayee} onDone={onClose} />
+        </div>
+      )}
+
       <dl className="details">
-        <dt>Date</dt>
-        <dd>{formatDate(txn.date, { time: txn.hasTime, year: true })}</dd>
         <dt>Bank</dt>
-        <dd>{BANK_LABELS[txn.bank]}</dd>
-        <dt>Method</dt>
         <dd>
-          {txn.method}
+          {BANK_LABELS[txn.bank]} · {txn.method}
           {txn.accountLast4 ? ` ••${txn.accountLast4}` : ''}
         </dd>
-        <dt>As written</dt>
-        <dd>{txn.merchantRaw || '—'}</dd>
         {txn.reference && (
           <>
             <dt>Reference</dt>
@@ -136,39 +136,38 @@ export function TxnSheet({ txn, onClose }: { txn: Transaction | null; onClose: (
         </dd>
       </dl>
 
+      <h3 className="sub-head">Just this transaction</h3>
       <div className="form">
-        <label>
-          Type
-          <select value={kind} onChange={(e) => onKind(e.target.value as TxnKind)}>
-            {(Object.keys(KIND_LABELS) as TxnKind[]).map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABELS[k]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Category
-          <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-            {CATEGORIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </label>
+        <div className="row-2">
+          <label>
+            Type
+            <select value={kind} onChange={(e) => onKind(e.target.value as TxnKind)}>
+              {(Object.keys(KIND_LABELS) as TxnKind[]).map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Category
+            <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
+              {CATEGORIES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label>
           Note
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" maxLength={200} />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Diwali gifts, school trip" maxLength={200} />
         </label>
         <label className="check">
           <input type="checkbox" checked={excluded} onChange={(e) => setExcluded(e.target.checked)} />
           Exclude from all totals
         </label>
-        <label className="check">
-          <input type="checkbox" checked={applyAll} onChange={(e) => setApplyAll(e.target.checked)} />
-          Always use this for “{txn.merchant}” ({sameMerchant} transaction{sameMerchant === 1 ? '' : 's'}, including future ones)
-        </label>
-        <button className="btn primary" onClick={save} disabled={busy || (!dirty && !applyAll)}>
-          Save
+        <button className="btn primary" onClick={save} disabled={busy || !dirty}>
+          Save this transaction
         </button>
       </div>
     </Sheet>

@@ -118,6 +118,21 @@ export const db = {
     return added;
   },
 
+  /** Fetch stored transactions by id (missing ids are skipped). */
+  async getTransactions(ids: string[]): Promise<Map<string, Transaction>> {
+    const out = new Map<string, Transaction>();
+    if (ids.length === 0) return out;
+    const db = await openDb();
+    const store = db.transaction('transactions').objectStore('transactions');
+    await Promise.all(
+      ids.map(async (id) => {
+        const t = (await req(store.get(id))) as Transaction | undefined;
+        if (t) out.set(id, t);
+      }),
+    );
+    return out;
+  },
+
   allRules: () => getAll<MerchantRule>('rules'),
   putRule: (r: MerchantRule) => putMany('rules', [r]),
   deleteRule: (id: string) => del('rules', id),
@@ -132,6 +147,13 @@ export const db = {
   allUnparsed: () => getAll<UnparsedEmail>('unparsed'),
   putUnparsed: (u: UnparsedEmail[]) => putMany('unparsed', u),
   deleteUnparsed: (id: string) => del('unparsed', id),
+  async deleteUnparsedMany(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const db = await openDb();
+    const tx = db.transaction('unparsed', 'readwrite');
+    for (const id of ids) tx.objectStore('unparsed').delete(id);
+    await done(tx);
+  },
 
   async settings(): Promise<Settings> {
     const db = await openDb();

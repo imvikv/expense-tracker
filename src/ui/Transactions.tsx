@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { isCounted, monthKey, monthLabel, spendPaise } from '../lib/analytics';
 import { download, toCsv } from '../lib/exporters';
+import { payeeKey } from '../lib/categorize';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type BankId, type Transaction, type TxnKind } from '../lib/types';
 import { CatDot, Empty, Icon } from './components';
 import { dayHeading, formatINR } from './format';
@@ -16,6 +17,8 @@ export interface TxnFilter {
   category?: string;
   kind?: TxnKind;
   method?: string;
+  /** payeeKey() of one counterparty. */
+  payee?: string;
 }
 
 const PAGE = 200;
@@ -30,7 +33,8 @@ export function applyFilter(txns: Transaction[], f: TxnFilter): Transaction[] {
     if (f.category && t.category !== f.category) return false;
     if (f.kind && t.kind !== f.kind) return false;
     if (f.method && t.method !== f.method) return false;
-    if (q && !(t.merchant.toLowerCase().includes(q) || t.merchantRaw.toLowerCase().includes(q) || (t.note ?? '').toLowerCase().includes(q))) return false;
+    if (f.payee && payeeKey(t) !== f.payee) return false;
+    if (q && ![t.merchant, t.merchantRaw, t.note, t.payee, t.payeeVpa, t.narration, t.subject, t.location, t.category].some((v) => v?.toLowerCase().includes(q))) return false;
     return true;
   });
 }
@@ -38,6 +42,9 @@ export function applyFilter(txns: Transaction[], f: TxnFilter): Transaction[] {
 export function TxnRow({ t, onOpen }: { t: Transaction; onOpen: (t: Transaction) => void }) {
   const credit = t.direction === 'credit';
   const muted = !isCounted(t) || spendPaise(t) === 0;
+  // Show who was actually paid when the name alone may not be enough to recognise it.
+  const raw = t.payee && t.payee.toLowerCase() !== t.merchant.toLowerCase() ? t.payee : undefined;
+  const who = t.payeeType === 'merchant' && !raw ? undefined : [raw, t.payeeVpa ?? (t.payeeAccount ? `A/c ••${t.payeeAccount}` : undefined)].filter(Boolean).join(' · ');
   return (
     <button className={`txn ${muted ? 'muted-row' : ''}`} onClick={() => onOpen(t)}>
       <CatDot category={t.category} />
@@ -47,12 +54,14 @@ export function TxnRow({ t, onOpen }: { t: Transaction; onOpen: (t: Transaction)
           {t.category} · {BANK_LABELS[t.bank].replace(' Bank', '').replace(' India', '')} {t.method === 'Unknown' ? '' : t.method}
           {t.accountLast4 ? ` ••${t.accountLast4}` : ''}
         </span>
+        {who && <span className="txn-who">{who}</span>}
         <span className="badges">
           {t.excluded && <span className="badge">excluded</span>}
           {t.duplicateStatus === 'duplicate' && <span className="badge warn">duplicate</span>}
           {t.duplicateStatus === 'suspected' && <span className="badge warn">possible duplicate</span>}
           {t.confidence === 'low' && !t.userEdited && <span className="badge warn">check</span>}
           {t.kind !== 'expense' && <span className="badge">{KIND_LABELS[t.kind]}</span>}
+          {t.payeeType === 'person' && <span className="badge payee-person">Person</span>}
         </span>
       </span>
       <span className={`txn-amt ${credit ? 'pos' : ''}`}>
@@ -88,7 +97,8 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
   }, [list, limit]);
 
   const current = open ? txns.find((t) => t.id === open.id) ?? open : null;
-  const active = Object.entries(f).filter(([k, v]) => v && k !== 'search').length;
+  const active = Object.entries(f).filter(([k, v]) => v && k !== 'search' && k !== 'payee').length;
+  const payeeName = f.payee ? txns.find((t) => payeeKey(t) === f.payee)?.merchant ?? 'payee' : null;
   const set = (patch: Partial<TxnFilter>) => setF((cur) => ({ ...cur, ...patch }));
 
   return (
@@ -170,6 +180,15 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
         </div>
       )}
 
+      {payeeName && (
+        <div className="filter-pill">
+          Payments to <strong>{payeeName}</strong>
+          <button className="icon-btn small" onClick={() => set({ payee: undefined })} aria-label="Clear payee filter">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="list-summary">
         <span>
           {list.length} transaction{list.length === 1 ? '' : 's'} · spending {formatINR(total)}
@@ -201,7 +220,14 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
         </div>
       )}
 
-      <TxnSheet txn={current} onClose={() => setOpen(null)} />
+      <TxnSheet
+        txn={current}
+        onClose={() => setOpen(null)}
+        onShowPayee={(k) => {
+          setOpen(null);
+          setF({ payee: k });
+        }}
+      />
     </div>
   );
 }

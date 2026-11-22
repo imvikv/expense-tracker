@@ -1,4 +1,4 @@
-import type { Category, Confidence, MerchantRule, ParsedTxn, Settings, Transaction, TxnKind } from './types';
+import { DETAIL_VERSION, type Category, type Confidence, type MerchantRule, type ParsedTxn, type PayeeInfo, type PayeeType, type Settings, type Transaction, type TxnKind } from './types';
 
 interface MerchantDef {
   name: string;
@@ -137,25 +137,41 @@ export function normaliseMerchant(raw: string): string {
   return s.slice(0, 40);
 }
 
-function ruleMatches(rule: MerchantRule, merchant: string, merchantRaw: string): boolean {
+/** The fields a rule can match: merchant name, payee as written, and the payee's UPI ID. */
+export interface RuleSubject {
+  merchant: string;
+  merchantRaw: string;
+  payee?: string;
+  payeeVpa?: string;
+}
+
+export function ruleMatches(rule: MerchantRule, t: RuleSubject): boolean {
   const p = rule.pattern.trim();
   if (!p) return false;
+  const fields = [t.merchant, t.merchantRaw, t.payee, t.payeeVpa].filter((f): f is string => !!f);
   const re = /^\/(.+)\/([a-z]*)$/.exec(p);
   if (re) {
     try {
       const r = new RegExp(re[1], re[2].includes('i') ? re[2] : re[2] + 'i');
-      return r.test(merchant) || r.test(merchantRaw);
+      return fields.some((f) => r.test(f));
     } catch {
       return false;
     }
   }
   const needle = p.toLowerCase();
-  return merchant.toLowerCase().includes(needle) || merchantRaw.toLowerCase().includes(needle);
+  return fields.some((f) => f.toLowerCase().includes(needle));
 }
 
-export function findRule(rules: MerchantRule[], merchant: string, merchantRaw: string): MerchantRule | undefined {
+export function findRule(rules: MerchantRule[], t: RuleSubject, need?: (r: MerchantRule) => boolean): MerchantRule | undefined {
   // Most recently created rule wins, so a new correction overrides older ones.
-  return [...rules].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).find((r) => ruleMatches(r, merchant, merchantRaw));
+  return [...rules].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).find((r) => (!need || need(r)) && ruleMatches(r, t));
+}
+
+/** Exact-match rule pattern for one payee: their UPI ID when known, else the merchant name. */
+export function payeeRulePattern(t: Pick<Transaction, 'payeeVpa' | 'merchant' | 'merchantRaw'>): string {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  if (t.payeeVpa) return `/^${esc(t.payeeVpa)}$/`;
+  return `/^${esc(t.merchantRaw || t.merchant)}$/`;
 }
 
 function matchesOwn(own: string[], ...fields: Array<string | undefined>): boolean {
@@ -164,6 +180,25 @@ function matchesOwn(own: string[], ...fields: Array<string | undefined>): boolea
     const n = o.trim().toLowerCase();
     return n.length >= 3 && hay.includes(n);
   });
+}
+
+const BUSINESS_WORDS =
+  /\b(ltd|limited|pvt|private|llp|inc|corp|corporation|company|co|store|stores|mart|enterprises?|traders?|trading|services?|solutions?|tech|technologies|india|pay|payments?|foods?|restaurant|cafe|kitchen|medical|medicals|pharma|pharmacy|chemists?|agency|agencies|centre|center|hospital|clinic|bazaar|general|kirana|sweets|bakery|hotel|motors|fuels?|petrol|station|shop|bank|insurance|finance|credit|card|club|world|hub|retail|wholesale|electronics|mobiles?|telecom|travels?|tours|logistics|international|associates|industries|systems|labs?|studio|salon|spa|gym|fitness|school|academy|institute|society|trust|foundation|charges?|fee|gst|atm|bill|recharge|online|digital|market|marketplace|supermarket|dairy|milk|vegetables?|fruits?|garments|fashion|jewell?ers?)\b/i;
+
+/** Heuristic: "RAHUL KUMAR" looks like a person, "SHARMA GENERAL STORE" doesn't. */
+export function looksLikePerson(name: string | undefined): boolean {
+  if (!name) return false;
+  const s = name.trim();
+  if (/\d|@|\.(com|in)\b/i.test(s) || BUSINESS_WORDS.test(s)) return false;
+  const words = s.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 4 && words.every((w) => /^[A-Za-z][A-Za-z.'-]{0,19}$/.test(w)) && s.length >= 3;
+}
+
+/** UPI IDs that belong to payment gateways / merchant QR codes rather than individuals. */
+export function isMerchantVpa(vpa: string | undefined): boolean {
+  if (!vpa) return false;
+  const local = vpa.split('@')[0];
+  return /^(q\d{5,}|paytmqr|bharatpe|gpay-|mab\.|bqr|pos\.|merchant)|payu|razorpay|rzp|billdesk|cashfree|pinelabs|juspay|ccavenue|easebuzz|phonepe\.merchant|store|shop|mart/i.test(local);
 }
 
 export function categoryForKind(kind: TxnKind, merchantCategory: Category | undefined): Category {
@@ -192,22 +227,33 @@ export interface Classification {
   kind: TxnKind;
   category: Category;
   confidence: Confidence;
+  payeeType: PayeeType;
 }
 
-/** Decide merchant name, kind and category for a parsed transaction. */
-export function classify(
-  p: Pick<ParsedTxn, 'merchantRaw' | 'direction' | 'method' | 'kindHint' | 'confidence' | 'accountLast4'>,
-  rules: MerchantRule[],
-  settings: Pick<Settings, 'ownIdentifiers'>,
-): Classification {
-  const merchant = normaliseMerchant(p.merchantRaw);
+export type ClassifyInput = Pick<ParsedTxn, 'merchantRaw' | 'direction' | 'method' | 'kindHint' | 'confidence' | 'accountLast4'> & PayeeInfo;
+
+/** Decide display name, payee type, kind and category for a parsed transaction. */
+export function classify(p: ClassifyInput, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers'>): Classification {
+  let merchant = normaliseMerchant(p.merchantRaw || p.payeeVpa || '');
   const def = MERCHANTS.find((m) => m.name === merchant) ?? MERCHANTS.find((m) => m.match.test(p.merchantRaw));
   let confidence = p.confidence;
+  const own = matchesOwn(settings.ownIdentifiers, p.merchantRaw, merchant, p.payeeVpa, p.payeeAccount);
+
+  // Who is the counterparty?
+  let payeeType: PayeeType;
+  if (own) payeeType = 'own';
+  else if (def) payeeType = 'merchant';
+  else if (p.payeeTypeHint) payeeType = p.payeeTypeHint;
+  else if (p.method === 'Credit Card' || p.method === 'Debit Card' || p.method === 'ATM') payeeType = 'merchant';
+  else if (isMerchantVpa(p.payeeVpa)) payeeType = 'merchant';
+  else if (looksLikePerson(p.payee)) payeeType = 'person';
+  else if (p.payeeAccount) payeeType = 'unknown';
+  else payeeType = p.payee ? 'merchant' : 'unknown';
 
   let kind: TxnKind;
   if (p.kindHint) kind = p.kindHint;
   else if (def?.kind) kind = def.kind;
-  else if (matchesOwn(settings.ownIdentifiers, p.merchantRaw, merchant)) kind = 'transfer';
+  else if (own) kind = 'transfer';
   else if (p.direction === 'credit') kind = /refund|reversal|reversed|cashback/i.test(p.merchantRaw) ? 'refund' : 'income';
   else if (p.method === 'Bank Transfer') {
     // NEFT/IMPS/RTGS to an account we don't recognise: could be rent, could be a
@@ -218,20 +264,25 @@ export function classify(
 
   let category = categoryForKind(kind, def?.category);
 
-  const rule = findRule(rules, merchant, p.merchantRaw);
-  if (rule) {
-    if (rule.kind) kind = rule.kind;
-    category = rule.category;
+  const subject: RuleSubject = { merchant, merchantRaw: p.merchantRaw, payee: p.payee, payeeVpa: p.payeeVpa };
+  const catRule = findRule(rules, subject, (r) => !!r.category || !!r.kind);
+  if (catRule) {
+    if (catRule.kind) kind = catRule.kind;
+    category = catRule.category ?? categoryForKind(kind, def?.category);
     if (confidence === 'medium' && !p.kindHint) confidence = 'high';
   }
+  const labelRule = findRule(rules, subject, (r) => !!r.label);
+  if (labelRule?.label) merchant = labelRule.label;
+  const typeRule = findRule(rules, subject, (r) => !!r.payeeType);
+  if (typeRule?.payeeType) payeeType = typeRule.payeeType;
 
   if (kind === 'expense' && category === 'Uncategorized' && confidence === 'high') confidence = 'medium';
-  return { merchant, kind, category, confidence };
+  return { merchant, kind, category, confidence, payeeType };
 }
 
 export function buildTransaction(
   p: ParsedTxn,
-  opts: { messageId: string; index: number; source: Transaction['source']; rules: MerchantRule[]; settings: Pick<Settings, 'ownIdentifiers'> },
+  opts: { messageId: string; index: number; source: Transaction['source']; rules: MerchantRule[]; settings: Pick<Settings, 'ownIdentifiers'>; subject?: string },
 ): Transaction {
   const c = classify(p, opts.rules, opts.settings);
   return {
@@ -249,6 +300,15 @@ export function buildTransaction(
     accountLast4: p.accountLast4,
     reference: p.reference,
     parserKind: p.kindHint,
+    payee: p.payee,
+    payeeVpa: p.payeeVpa,
+    payeeAccount: p.payeeAccount,
+    payeeTypeHint: p.payeeTypeHint,
+    payeeType: c.payeeType,
+    narration: p.narration,
+    location: p.location,
+    subject: opts.subject ? opts.subject.slice(0, 140) : undefined,
+    detailVersion: DETAIL_VERSION,
     source: opts.source,
     sourceMessageId: opts.messageId,
     confidence: c.confidence,
@@ -260,22 +320,49 @@ export function buildTransaction(
   };
 }
 
+function classifyStored(t: Transaction, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers'>): Classification {
+  return classify({ ...t, kindHint: t.parserKind }, rules, settings);
+}
+
 /**
  * Re-apply rules to existing transactions (e.g. after the user adds a rule).
- * Transactions the user edited by hand are left alone.
+ * Category/type edits made by hand are kept; payee nicknames and person/merchant
+ * labels still apply to them.
  */
 export function reapplyRules(txns: Transaction[], rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers'>): Transaction[] {
   const changed: Transaction[] = [];
   for (const t of txns) {
-    if (t.userEdited) continue;
-    const c = classify(
-      { merchantRaw: t.merchantRaw, direction: t.direction, method: t.method, kindHint: t.parserKind, confidence: t.confidence, accountLast4: t.accountLast4 },
-      rules,
-      settings,
-    );
-    if (c.kind !== t.kind || c.category !== t.category || c.merchant !== t.merchant) {
-      changed.push({ ...t, kind: c.kind, category: c.category, merchant: c.merchant });
-    }
+    const c = classifyStored(t, rules, settings);
+    const next: Transaction = t.userEdited ? { ...t, merchant: c.merchant, payeeType: c.payeeType } : { ...t, kind: c.kind, category: c.category, merchant: c.merchant, payeeType: c.payeeType };
+    if (next.kind !== t.kind || next.category !== t.category || next.merchant !== t.merchant || next.payeeType !== t.payeeType) changed.push(next);
   }
   return changed;
+}
+
+/**
+ * Merge freshly parsed details into a stored transaction (used when older
+ * transactions are re-read from Gmail). User decisions are kept.
+ */
+export function mergeDetails(old: Transaction, fresh: Transaction): Transaction {
+  const base: Transaction = {
+    ...old,
+    payee: fresh.payee,
+    payeeVpa: fresh.payeeVpa,
+    payeeAccount: fresh.payeeAccount,
+    payeeTypeHint: fresh.payeeTypeHint,
+    narration: fresh.narration,
+    location: fresh.location,
+    subject: fresh.subject ?? old.subject,
+    reference: old.reference ?? fresh.reference,
+    detailVersion: DETAIL_VERSION,
+  };
+  if (old.userEdited) return { ...base, payeeType: fresh.payeeType, merchant: fresh.merchant };
+  return { ...base, payeeType: fresh.payeeType, merchant: fresh.merchant, merchantRaw: fresh.merchantRaw, kind: fresh.kind, category: fresh.category, parserKind: fresh.parserKind, template: fresh.template, confidence: fresh.confidence };
+}
+
+/** Stable key identifying one counterparty across transactions. */
+export function payeeKey(t: Pick<Transaction, 'payeeVpa' | 'payeeAccount' | 'merchant' | 'bank'>): string {
+  if (t.payeeVpa) return `vpa:${t.payeeVpa.toLowerCase()}`;
+  if (t.payeeAccount) return `acct:${t.payeeAccount}`;
+  return `name:${t.merchant.toLowerCase()}`;
 }

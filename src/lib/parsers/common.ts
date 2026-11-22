@@ -1,4 +1,4 @@
-import type { BankId, Confidence, Direction, ParsedTxn, PaymentMethod, TxnKind } from '../types';
+import type { BankId, Confidence, Direction, ParsedTxn, PaymentMethod, PayeeType, TxnKind } from '../types';
 
 /** Input every bank parser receives. The body is plain text (HTML already stripped). */
 export interface EmailInput {
@@ -182,20 +182,71 @@ export function rx(source: string, flags = 'i'): RegExp {
 
 const INFO_NOISE = /^(UPI|P2M|P2A|POS|ECOM|ECOM PUR|PUR|IMPS|NEFT|RTGS|MMT|BIL|ONL|INB|ACH|NACH|CMS|BBPS|VPS|IPS|MOB|NFS|ATW|CAW|DR|CR)$/i;
 
+export interface InfoParts {
+  name: string;
+  location?: string;
+  typeHint?: PayeeType;
+}
+
 /**
- * Bank "transaction info" strings look like UPI/P2M/632477712345/ZEPTO MARKETPLACE or
- * NEFT-CITIN26305123456-ACME TECH. Pull out the counterparty name.
+ * Bank "transaction info" strings look like UPI/P2M/632477712345/ZEPTO MARKETPLACE,
+ * ECOM PUR/BOOKMYSHOW/MUMBAI or NEFT-CITIN26305123456-ACME TECH.
+ * Split out the counterparty name, a trailing city, and the P2A (person) / P2M (merchant) marker.
  */
-export function merchantFromInfo(info: string): string {
+export function parseInfo(info: string): InfoParts {
   const s = info.trim();
   let parts: string[] | null = null;
   if (s.includes('/')) parts = s.split('/');
   else if (/^(NEFT|IMPS|RTGS|UPI|ACH|NACH)-/i.test(s)) parts = s.split('-');
-  if (!parts) return s.replace(/^(UPI|NEFT|IMPS|RTGS)\s+(from|to)\s+/i, '');
-  const kept = parts
-    .map((p) => p.trim())
-    .filter((p) => p && !INFO_NOISE.test(p) && !/\d{6,}/.test(p) && !p.includes('••') && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(p) && !/^[A-Z]{4,6}[0-9•]{6,}$/i.test(p));
-  return kept[0] ?? s;
+  if (!parts) return { name: s.replace(/^(UPI|NEFT|IMPS|RTGS)\s+(from|to)\s+/i, '') };
+  const trimmed = parts.map((p) => p.trim());
+  const typeHint: PayeeType | undefined = trimmed.some((p) => /^P2A$/i.test(p)) ? 'person' : trimmed.some((p) => /^P2M$/i.test(p)) ? 'merchant' : undefined;
+  const kept = trimmed.filter(
+    (p) => p && !INFO_NOISE.test(p) && !/\d{6,}/.test(p) && !p.includes('••') && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(p) && !/^[A-Z]{4,6}[0-9•]{6,}$/i.test(p),
+  );
+  const name = kept[0] ?? s;
+  const tail = kept.length > 1 ? kept[kept.length - 1] : undefined;
+  const location = tail && /^[A-Za-z][A-Za-z .'-]{2,30}$/.test(tail) && !/^(UPI|PAYMENT|PAY|NA|NULL)$/i.test(tail) ? tail : undefined;
+  return { name, location, typeHint };
+}
+
+export function merchantFromInfo(info: string): string {
+  return parseInfo(info).name;
+}
+
+/** A UPI ID such as rahul.k@okaxis (but not an email address like alerts@hdfcbank.net). */
+export function findVpa(text: string): string | undefined {
+  const m = /(?<![\w.@-])([a-z0-9][a-z0-9._-]{1,63}@[a-z][a-z0-9]{1,30})(?![\w@-]|\.[a-z])/i.exec(text);
+  return m?.[1].toLowerCase();
+}
+
+/** Mask runs of 9+ digits (account/card numbers, long refs) to their last 4. */
+export function maskNumbers(s: string): string {
+  return s.replace(/\d{9,}/g, (d) => `••${d.slice(-4)}`);
+}
+
+const BOILERPLATE = /\s(?:The )?(?:Avail(?:able)?|Avl\.?)\s|\s(?:Total Credit Limit|If (?:you|this)|Call\s|SMS\s|Please\s|Not you|Do not share|Thank you for banking)/i;
+
+/**
+ * The bank's own description of the transaction: from the start of the sentence
+ * containing `index`, through the end of the matched text (`end`), up to the end of
+ * that paragraph — minus balance/helpline boilerplate. Long numbers are masked.
+ */
+export function narrationAt(text: string, index: number, end = index): string {
+  const before = text.slice(0, index);
+  const lastSentence = [...before.matchAll(/[.!?]\s+(?=[A-Z])/g)].pop();
+  const start = Math.max(before.lastIndexOf('\n') + 1, lastSentence ? (lastSentence.index ?? 0) + lastSentence[0].length : 0);
+  const nl = text.indexOf('\n', Math.max(end, index));
+  let out = text.slice(start, nl === -1 ? undefined : nl).replace(/\s+/g, ' ').trim();
+  const cut = BOILERPLATE.exec(out);
+  if (cut && cut.index > 20) out = out.slice(0, cut.index).trim();
+  return maskNumbers(out.slice(0, 260));
+}
+
+/** Counterparty account in text such as "to account **9012" or "A/c XX1234". */
+export function findPayeeAccount(s: string): string | undefined {
+  const m = /^(?:to\s+)?(?:account|a\/c|acct)\s*(?:no\.?\s*)?[*xX•]*\s*(\d{3,})/i.exec(s.trim());
+  return m ? m[1].slice(-4) : undefined;
 }
 
 export function findUpiRef(text: string): string | undefined {
@@ -261,6 +312,15 @@ export function make(
     kindHint?: TxnKind;
     receivedAt: string;
     dateText?: string;
+    /** Where the matched transaction text starts/ends in `text` (for the narration). */
+    at?: number;
+    atEnd?: number;
+    narration?: string;
+    vpa?: string;
+    location?: string;
+    payeeTypeHint?: PayeeType;
+    /** False when merchantRaw is a fixed label, not a counterparty from the email. */
+    hasPayee?: boolean;
   },
 ): ParsedTxn {
   const method = fields.method ?? detectMethod(fields.text);
@@ -269,6 +329,11 @@ export function make(
   if (!fromBody && confidence === 'high') confidence = 'medium';
   const merchant = cleanMerchant(fields.merchantRaw);
   if (!merchant && confidence === 'high') confidence = 'medium';
+  const narration = fields.narration ? maskNumbers(fields.narration).slice(0, 260) : narrationAt(fields.text, fields.at ?? 0, fields.atEnd);
+  const vpa = fields.vpa?.toLowerCase() ?? findVpa(narration);
+  const hasPayee = fields.hasPayee !== false;
+  const payeeAccount = hasPayee ? findPayeeAccount(merchant) : undefined;
+  const payee = hasPayee && merchant && !payeeAccount ? merchant : hasPayee && !merchant && vpa ? vpa : undefined;
   return {
     bank,
     method,
@@ -282,6 +347,12 @@ export function make(
     kindHint: fields.kindHint ?? detectKindHint(fields.text, fields.direction, method),
     confidence,
     template,
+    payee,
+    payeeVpa: hasPayee ? vpa : undefined,
+    payeeAccount,
+    payeeTypeHint: fields.payeeTypeHint,
+    narration: narration || undefined,
+    location: fields.location,
   };
 }
 
@@ -298,6 +369,8 @@ export interface Template {
   merchant?: number | number[];
   /** Fixed merchant label when the email has none (e.g. card bill payments). */
   merchantConst?: string;
+  /** Group holding the counterparty UPI ID. */
+  vpa?: number;
   account?: number;
   /** Optional explicit date group. */
   date?: number;
@@ -310,12 +383,19 @@ export function runTemplates(bank: BankId, templates: Template[], text: string, 
     const amountPaise = toPaise(m[t.amount]);
     if (!amountPaise) continue;
     const groups = t.merchant === undefined ? [] : Array.isArray(t.merchant) ? t.merchant : [t.merchant];
-    const merchantRaw = groups.map((g) => (m[g] ?? '').trim()).find((v) => v.length > 0) ?? t.merchantConst ?? '';
+    const fromEmail = groups.map((g) => (m[g] ?? '').trim()).find((v) => v.length > 0);
+    const info = parseInfo(fromEmail ?? t.merchantConst ?? '');
     return make(bank, t.name, {
       text,
       direction: t.direction,
       amountPaise,
-      merchantRaw: merchantFromInfo(merchantRaw),
+      merchantRaw: info.name,
+      hasPayee: fromEmail !== undefined,
+      location: info.location,
+      payeeTypeHint: info.typeHint,
+      vpa: t.vpa ? m[t.vpa] : undefined,
+      at: m.index,
+      atEnd: m.index + m[0].length,
       method: t.method,
       accountLast4: t.account ? last4(m[t.account]) : undefined,
       kindHint: t.kindHint,
@@ -353,5 +433,6 @@ export function genericParse(bank: BankId, text: string, receivedAt: string): Pa
     merchantRaw: merchantMatch?.[1] ?? '',
     confidence: 'low',
     receivedAt,
+    at: first.index ?? 0,
   });
 }

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { addMonths, detectRecurring, detectUnusual, groupSpend, inMonth, isCounted, methodBucket, monthKey, monthLabel, monthlyTotals, summarise } from '../lib/analytics';
 import { BANK_LABELS, KIND_LABELS, type TxnKind } from '../lib/types';
 import { Card, catColor, Empty, HBars, Icon, MonthBars } from './components';
+import { categoryDeltas, monthInsights, payeeGroups } from '../lib/insights';
+import { PayeeTag } from './Payee';
 import { formatDate, formatINR } from './format';
 import { useStore } from './store';
 import type { TxnFilter } from './Transactions';
@@ -16,7 +18,12 @@ export function Dashboard({ go }: { go: (tab: 'txns' | 'review', filter?: TxnFil
   const trend = useMemo(() => monthlyTotals(txns, month, 12), [txns, month]);
   const monthTxns = useMemo(() => txns.filter((t) => inMonth(t, month)), [txns, month]);
   const cats = useMemo(() => groupSpend(monthTxns, (t) => t.category), [monthTxns]);
-  const merchants = useMemo(() => groupSpend(monthTxns, (t) => t.merchant), [monthTxns]);
+  const insights = useMemo(() => monthInsights(txns, month), [txns, month]);
+  const payees = useMemo(() => payeeGroups(monthTxns), [monthTxns]);
+  const [payeeView, setPayeeView] = useState<'all' | 'person'>('all');
+  const shownPayees = payeeView === 'person' ? payees.filter((g) => g.type === 'person') : payees;
+  const deltas = useMemo(() => categoryDeltas(txns, month).filter((d) => Math.abs(d.deltaPaise) >= 10000).slice(0, 6), [txns, month]);
+  const maxDelta = Math.max(1, ...deltas.map((d) => Math.abs(d.deltaPaise)));
   const banks = useMemo(() => groupSpend(monthTxns, (t) => BANK_LABELS[t.bank]), [monthTxns]);
   const methods = useMemo(() => groupSpend(monthTxns, methodBucket), [monthTxns]);
   const recurring = useMemo(() => detectRecurring(txns), [txns]);
@@ -31,7 +38,6 @@ export function Dashboard({ go }: { go: (tab: 'txns' | 'review', filter?: TxnFil
   }, [monthTxns]);
   const review = useMemo(
     () => ({
-      uncategorized: txns.filter((t) => isCounted(t) && t.category === 'Uncategorized' && t.kind === 'expense').length,
       suspected: txns.filter((t) => t.duplicateStatus === 'suspected').length,
       low: txns.filter((t) => t.confidence === 'low' && !t.userEdited).length,
     }),
@@ -88,11 +94,37 @@ export function Dashboard({ go }: { go: (tab: 'txns' | 'review', filter?: TxnFil
         </div>
       </div>
 
-      {(review.uncategorized > 0 || review.suspected > 0 || review.low > 0) && (
+      <Card title="Summary" className="summary">
+        <ul className="insights">
+          {insights.map((i) => {
+            const a = i.action;
+            const body = (
+              <>
+                <span className={`ins-dot ${i.tone}`} aria-hidden="true" />
+                <span>{i.text}</span>
+              </>
+            );
+            return (
+              <li key={i.id}>
+                {a ? (
+                  <button className="ins" onClick={() => (a.to === 'review' ? go('review') : go('txns', { month, category: a.category, payee: a.payee, search: a.search }))}>
+                    {body}
+                    <Icon name="chevR" size={16} />
+                  </button>
+                ) : (
+                  <div className="ins">{body}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+
+      {(review.suspected > 0 || review.low > 0) && (
         <button className="review-banner" onClick={() => go('review')}>
           <Icon name="alert" size={20} />
           <span>
-            {[review.suspected && `${review.suspected} possible duplicate${review.suspected > 1 ? 's' : ''}`, review.uncategorized && `${review.uncategorized} uncategorised`, review.low && `${review.low} low-confidence`]
+            {[review.suspected && `${review.suspected} possible duplicate${review.suspected > 1 ? 's' : ''}`, review.low && `${review.low} low-confidence`]
               .filter(Boolean)
               .join(' · ')}
           </span>
@@ -108,9 +140,67 @@ export function Dashboard({ go }: { go: (tab: 'txns' | 'review', filter?: TxnFil
         <HBars rows={cats.map((c) => ({ key: c.key, value: c.spendPaise, count: c.count }))} color={catColor} onSelect={(k) => go('txns', { month, category: k })} />
       </Card>
 
-      <Card title="Top merchants">
-        <HBars rows={merchants.map((c) => ({ key: c.key, value: c.spendPaise, count: c.count }))} onSelect={(k) => go('txns', { month, search: k })} limit={6} />
+      <Card
+        title="Who you paid"
+        action={
+          <div className="seg mini">
+            <label className={payeeView === 'all' ? 'on' : ''}>
+              <input type="radio" checked={payeeView === 'all'} onChange={() => setPayeeView('all')} /> All
+            </label>
+            <label className={payeeView === 'person' ? 'on' : ''}>
+              <input type="radio" checked={payeeView === 'person'} onChange={() => setPayeeView('person')} /> People
+            </label>
+          </div>
+        }
+      >
+        {shownPayees.length === 0 ? (
+          <Empty>{payeeView === 'person' ? 'No payments to people this month.' : 'No spending this month.'}</Empty>
+        ) : (
+          <ul className="rows">
+            {shownPayees.slice(0, 8).map((g) => (
+              <li key={g.key}>
+                <button className="row" onClick={() => go('txns', { payee: g.key })}>
+                  <span className="cat-dot" style={{ background: catColor(g.categories[0] ?? 'Uncategorized') }} />
+                  <span className="row-main">
+                    <strong>
+                      {g.name} <PayeeTag type={g.type} />
+                    </strong>
+                    <small>
+                      {g.categories.slice(0, 2).join(', ')} · {g.count} payment{g.count === 1 ? '' : 's'}
+                      {g.vpa ? ` · ${g.vpa}` : ''}
+                    </small>
+                  </span>
+                  <span className="row-amt">{formatINR(g.spendPaise)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
+
+      {deltas.length > 0 && (
+        <Card title={`Changes vs ${monthLabel(addMonths(month, -1))}`}>
+          <ul className="deltas">
+            {deltas.map((d) => (
+              <li key={d.category}>
+                <button className="delta-row" onClick={() => go('txns', { month, category: d.category })}>
+                  <span className="delta-name">
+                    <span className="cat-dot" style={{ background: catColor(d.category) }} />
+                    {d.category}
+                  </span>
+                  <span className="delta-bar">
+                    <span className={d.deltaPaise > 0 ? 'up' : 'down'} style={{ width: `${(Math.abs(d.deltaPaise) / maxDelta) * 50}%` }} />
+                  </span>
+                  <span className={`delta-amt ${d.deltaPaise > 0 ? 'up' : 'down'}`}>
+                    {d.deltaPaise > 0 ? '+' : '−'}
+                    {formatINR(Math.abs(d.deltaPaise), { compact: true })}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid-2">
         <Card title="By bank">

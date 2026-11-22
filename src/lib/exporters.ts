@@ -10,12 +10,19 @@ function csvCell(v: unknown): string {
 }
 
 export function toCsv(txns: Transaction[]): string {
-  const head = ['Date', 'Bank', 'Payment method', 'Merchant', 'Amount (INR)', 'Direction', 'Type', 'Category', 'Counts as spending (INR)', 'Card/Account (last 4)', 'Reference', 'Confidence', 'Excluded', 'Duplicate status', 'Note', 'Source', 'Source message ID'];
+  const head = ['Date', 'Bank', 'Payment method', 'Merchant', 'Paid to (as written)', 'UPI ID', 'Payee account (last 4)', 'Payee type', 'Bank description', 'Location', 'Email subject', 'Amount (INR)', 'Direction', 'Type', 'Category', 'Counts as spending (INR)', 'Card/Account (last 4)', 'Reference', 'Confidence', 'Excluded', 'Duplicate status', 'Note', 'Source', 'Source message ID'];
   const rows = txns.map((t) => [
     t.date.replace('T', ' '),
     BANK_LABELS[t.bank],
     t.method,
     t.merchant,
+    t.payee ?? '',
+    t.payeeVpa ?? '',
+    t.payeeAccount ? `XX${t.payeeAccount}` : '',
+    t.payeeType ?? '',
+    t.narration ?? '',
+    t.location ?? '',
+    t.subject ?? '',
     (t.amountPaise / 100).toFixed(2),
     t.direction,
     KIND_LABELS[t.kind],
@@ -89,7 +96,7 @@ export async function restoreBackup(json: string): Promise<{ transactions: numbe
   }
   const txns = data.transactions.filter(isTxn).map((t) => ({ ...t, accountLast4: t.accountLast4?.replace(/\D/g, '').slice(-4) }));
   const rules = (Array.isArray(data.rules) ? data.rules : []).filter(
-    (r) => r && typeof r.id === 'string' && typeof r.pattern === 'string' && (CATEGORIES as readonly string[]).includes(r.category),
+    (r) => r && typeof r.id === 'string' && typeof r.pattern === 'string' && (r.category === undefined || (CATEGORIES as readonly string[]).includes(r.category)),
   );
   await db.putTransactions(txns);
   for (const r of rules) await db.putRule(r);

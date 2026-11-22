@@ -56,6 +56,7 @@ const T: Template[] = [
     amount: 1,
     account: 2,
     merchant: [4, 3],
+    vpa: 3,
   },
   {
     name: 'hdfc.upi.credit',
@@ -65,6 +66,7 @@ const T: Template[] = [
     amount: 1,
     account: 2,
     merchant: [4, 3],
+    vpa: 3,
   },
   {
     name: 'hdfc.account.debit',

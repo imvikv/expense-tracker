@@ -242,6 +242,10 @@ const gens: Record<string, (merchant: string) => Gen> = {
     email(I_CC, 'Transaction alert for your ICICI Bank Credit Card', `Dear Customer,\n\nYour ICICI Bank Credit Card XX5566 has been used for a transaction of INR ${fmt.inr(paise)} on ${fmt.monDY(d)} at ${fmt.time(d)}. Info: ${merchant}. The Available Credit Limit on your card is INR 2,10,450.00.`, d.toISOString(), id),
   axisUPI: (merchant) => (d, paise, id) =>
     email(A, 'Debit transaction alert for Axis Bank A/c', `Dear Customer,\n\nAmount Debited: INR ${fmt.inr(paise)}\nAccount Number: XX2468\nDate & Time: ${fmt.dmy2(d)}, ${fmt.time(d)} IST\nTransaction Info: UPI/P2M/${id.replace(/\D/g, '').padStart(12, '7').slice(-12)}/${merchant}\n\nIf this transaction was not initiated by you, please call us.`, d.toISOString(), id),
+  hdfcP2P: (who) => (d, paise, id) =>
+    email(H, 'You have done a UPI txn. Check details!', `Dear Customer,\n\nRs.${fmt.plain(paise)} has been debited from account **7788 to VPA ${who.split(' ')[0].toLowerCase()}.${who.split(' ')[1]?.toLowerCase() ?? 'x'}@oksbi ${who} on ${fmt.dmy2(d)}. Your UPI transaction reference number is ${id.replace(/\D/g, '').padStart(12, '5').slice(-12)}.`, d.toISOString(), id),
+  axisP2A: (who) => (d, paise, id) =>
+    email(A, 'Debit transaction alert for Axis Bank A/c', `Dear Customer,\n\nAmount Debited: INR ${fmt.inr(paise)}\nAccount Number: XX2468\nDate & Time: ${fmt.dmy2(d)}, ${fmt.time(d)} IST\nTransaction Info: UPI/P2A/${id.replace(/\D/g, '').padStart(12, '8').slice(-12)}/${who}\n\nIf this transaction was not initiated by you, please call us.`, d.toISOString(), id),
   axisCC: (merchant) => (d, paise, id) =>
     email(A_CC, 'Transaction alert on Axis Bank Credit Card no. XX7890', `Transaction alert on Axis Bank Credit Card no. XX7890\n\nINR ${fmt.inr(paise)} spent at ${merchant} on ${fmt.dmy(d)} ${fmt.time(d)} IST. Available limit: INR 98,550.`, d.toISOString(), id),
   hsbcCC: (merchant) => (d, paise, id) =>
@@ -285,6 +289,11 @@ export function generateSampleEmails(now: Date, months = 12): EmailInput[] {
     { gen: gens.hdfcUPI('DMART'), days: 2, base: 2100, jitter: 0.4, hour: 17 },
     { gen: gens.axisCC('STARBUCKS'), days: 2, base: 520, jitter: 0.3, hour: 16 },
     { gen: gens.hdfcCC('APOLLO PHARMACY'), days: 1, base: 900, jitter: 0.7, hour: 12 },
+    // Payments to people: these are what the "Identify payees" review is for.
+    { gen: gens.hdfcP2P('SUNITA DEVI'), days: [2], base: 6000, jitter: 0, hour: 9 },
+    { gen: gens.axisP2A('RAMESH KUMAR'), days: 4, base: 320, jitter: 0.5, hour: 8 },
+    { gen: gens.hdfcP2P('MOHAN LAL'), days: 1, base: 1500, jitter: 0.6, hour: 18 },
+    { gen: gens.axisUPI('SHARMA GENERAL STORE'), days: 2, base: 450, jitter: 0.5, hour: 19 },
   ];
   const out: EmailInput[] = [];
   let n = 0;

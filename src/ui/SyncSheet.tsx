@@ -64,7 +64,7 @@ export function SyncSheet({ open, onClose, openSettings }: { open: boolean; onCl
       if (end && end < start) throw new Error('The end date is before the start date.');
       const r = await syncGmail({ from: start, to: end, settings, rules, onProgress: setProgress, signal: abort.current.signal });
       await reload();
-      toast(`Sync done · ${r.added} new transaction${r.added === 1 ? '' : 's'}${r.duplicatesFlagged ? ` · ${r.duplicatesFlagged} duplicate${r.duplicatesFlagged === 1 ? '' : 's'} flagged` : ''}`);
+      toast(`Sync done · ${r.added} new transaction${r.added === 1 ? '' : 's'}${r.updated ? ` · ${r.updated} updated with payee details` : ''}${r.duplicatesFlagged ? ` · ${r.duplicatesFlagged} duplicate${r.duplicatesFlagged === 1 ? '' : 's'} flagged` : ''}`);
       onClose();
     } catch (e) {
       await reload();
@@ -146,11 +146,12 @@ export function SyncSheet({ open, onClose, openSettings }: { open: boolean; onCl
           {progress && running && (
             <div className="progress">
               <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${progress.phase === 'listing' ? 5 : pct}%` }} />
+                <div className="progress-fill" style={{ width: `${progress.phase === 'listing' ? 5 : progress.phase === 'finishing' ? 100 : pct}%` }} />
               </div>
               <p className="hint">
                 {progress.phase === 'listing' && `Searching Gmail… ${progress.found} matching emails`}
                 {progress.phase === 'fetching' && `Reading ${progress.fetched} of ${progress.total} new emails · ${progress.added} transactions${progress.skipped ? ` · ${progress.skipped} already synced` : ''}`}
+                {progress.phase === 'updating' && `Adding payee details to earlier transactions… ${progress.fetched} of ${progress.total}`}
                 {progress.phase === 'finishing' && 'Checking for duplicates…'}
               </p>
             </div>

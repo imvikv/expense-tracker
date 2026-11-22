@@ -77,8 +77,26 @@ export type Confidence = 'high' | 'medium' | 'low';
 
 export type DuplicateStatus = 'none' | 'suspected' | 'duplicate' | 'not_duplicate';
 
+export type PayeeType = 'merchant' | 'person' | 'own' | 'unknown';
+
+/** Who the money went to (or came from), as far as the email tells us. */
+export interface PayeeInfo {
+  /** Counterparty name as the bank wrote it (e.g. "RAHUL KUMAR", "ZOMATO LIMITED"). */
+  payee?: string;
+  /** UPI ID of the counterparty, e.g. zomato.payu@hdfcbank. */
+  payeeVpa?: string;
+  /** Last 4 digits of the counterparty's bank account (NEFT/IMPS). */
+  payeeAccount?: string;
+  /** P2A/P2M hint from the bank narration, when present. */
+  payeeTypeHint?: PayeeType;
+  /** The bank's own description of the transaction, long numbers masked. */
+  narration?: string;
+  /** City/location when the bank includes one (card and ATM alerts). */
+  location?: string;
+}
+
 /** Output of a bank parser, before categorisation and storage. */
-export interface ParsedTxn {
+export interface ParsedTxn extends PayeeInfo {
   bank: BankId;
   method: PaymentMethod;
   direction: Direction;
@@ -100,7 +118,10 @@ export interface ParsedTxn {
   template: string;
 }
 
-export interface Transaction {
+/** Bump when parsers start extracting new fields; older Gmail transactions are re-read on the next sync. */
+export const DETAIL_VERSION = 2;
+
+export interface Transaction extends PayeeInfo {
   id: string;
   date: string;
   hasTime: boolean;
@@ -129,15 +150,29 @@ export interface Transaction {
   duplicateOf?: string;
   /** Free-text note from the user. */
   note?: string;
+  /** Person / merchant / own account, decided by classification or by the user. */
+  payeeType?: PayeeType;
+  /** Email subject line (truncated), to help recognise the transaction. */
+  subject?: string;
+  /** Which parser generation produced the payee details (see DETAIL_VERSION). */
+  detailVersion?: number;
   createdAt: string;
 }
 
 export interface MerchantRule {
   id: string;
-  /** Case-insensitive substring or /regex/ matched against the normalised merchant. */
+  /**
+   * Case-insensitive substring or /regex/ matched against the merchant name,
+   * the payee name as written, and the payee's UPI ID.
+   */
   pattern: string;
-  category: Category;
+  /** Category to apply; omitted when the rule only renames a payee. */
+  category?: Category;
   kind?: TxnKind;
+  /** Friendly name to show instead of the bank's text, e.g. "Rahul (driver)". */
+  label?: string;
+  /** Mark the payee as a person, merchant or your own account. */
+  payeeType?: PayeeType;
   createdAt: string;
 }
 

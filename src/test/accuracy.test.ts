@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTransaction, classify, normaliseMerchant, reapplyRules } from '../lib/categorize';
+import { buildTransaction, classify, looksLikePerson, mergeDetails, normaliseMerchant, payeeKey, payeeRulePattern, reapplyRules } from '../lib/categorize';
+import { DETAIL_VERSION } from '../lib/types';
 import { compare, findDuplicates } from '../lib/dedupe';
 import { detectRecurring, monthlyTotals, spendPaise, summarise } from '../lib/analytics';
 import { parseEmail } from '../lib/parsers';
@@ -195,4 +196,83 @@ test('CSV export escapes quotes/commas and neutralises formulas', async () => {
   assert.match(csv, /"'=HYPERLINK\(""x""\)"/);
   assert.match(csv, /"a, ""b"""/);
   assert.ok(!csv.includes('4321') || csv.includes('XX4321'), 'only masked last 4 appear');
+});
+
+// ---------------- Payees ----------------
+
+test('people vs merchants', () => {
+  const s = { ownIdentifiers: [] };
+  assert.equal(classify(parsed({ method: 'UPI', merchantRaw: 'RAHUL KUMAR', payee: 'RAHUL KUMAR', payeeVpa: 'rahul.k@okaxis' }), [], s).payeeType, 'person');
+  assert.equal(classify(parsed({ method: 'UPI', merchantRaw: 'SHARMA GENERAL STORE', payee: 'SHARMA GENERAL STORE' }), [], s).payeeType, 'merchant');
+  assert.equal(classify(parsed({ method: 'UPI', merchantRaw: 'MOHAN', payee: 'MOHAN', payeeVpa: 'q987654321@ybl' }), [], s).payeeType, 'merchant', 'merchant QR');
+  assert.equal(classify(parsed({ method: 'UPI', merchantRaw: 'ZOMATO LIMITED', payee: 'ZOMATO LIMITED' }), [], s).payeeType, 'merchant');
+  assert.equal(classify(parsed({ method: 'UPI', merchantRaw: 'PRIYA S', payeeTypeHint: 'merchant' }), [], s).payeeType, 'merchant', 'bank P2M marker wins over name heuristics');
+  assert.equal(classify(parsed({ method: 'UPI', merchantRaw: 'VIKAS SHARMA', payee: 'VIKAS SHARMA' }), [], { ownIdentifiers: ['vikas sharma'] }).payeeType, 'own');
+  assert.ok(looksLikePerson('Sunita Devi'));
+  assert.ok(!looksLikePerson('Apollo Pharmacy'));
+});
+
+test('a payee rule keyed on UPI ID names, categorises and types every payment to them', () => {
+  const t = txn({ method: 'UPI', merchantRaw: 'SUNITA DEVI', payee: 'SUNITA DEVI', payeeVpa: 'sunita.devi@oksbi' });
+  assert.equal(t.category, 'Uncategorized');
+  const rule: MerchantRule = { id: 'r', pattern: payeeRulePattern(t), label: 'Sunita (house help)', category: 'Rent and Housing', payeeType: 'person', createdAt: '2026-01-01T00:00:00Z' };
+  const other = txn({ method: 'UPI', merchantRaw: 'SUNITA D', payee: 'SUNITA D', payeeVpa: 'sunita.devi@oksbi' });
+  const unrelated = txn({ method: 'UPI', merchantRaw: 'SUNITA DEVI', payee: 'SUNITA DEVI', payeeVpa: 'sunita.devi2@okhdfc' });
+  const changed = reapplyRules([t, other, unrelated], [rule], { ownIdentifiers: [] });
+  assert.deepEqual(changed.map((c) => c.id).sort(), [t.id, other.id].sort());
+  for (const c of changed) {
+    assert.equal(c.merchant, 'Sunita (house help)');
+    assert.equal(c.category, 'Rent and Housing');
+  }
+});
+
+test('nicknames apply even to hand-edited transactions, categories do not', () => {
+  const t = txn({ method: 'UPI', merchantRaw: 'MOHAN LAL', payee: 'MOHAN LAL', payeeVpa: 'mohan.lal@oksbi' }, { userEdited: true, category: 'Healthcare' });
+  const rules: MerchantRule[] = [{ id: 'r', pattern: '/^mohan\\.lal@oksbi$/', label: 'Mohan (milkman)', category: 'Groceries', createdAt: '2026-01-01T00:00:00Z' }];
+  const [c] = reapplyRules([t], rules, { ownIdentifiers: [] });
+  assert.equal(c.merchant, 'Mohan (milkman)');
+  assert.equal(c.category, 'Healthcare');
+});
+
+test('re-reading an email adds payee details but keeps user decisions', () => {
+  const old = txn({ method: 'UPI', merchantRaw: 'RAHUL KUMAR' }, { detailVersion: undefined, userEdited: true, category: 'Travel', note: 'cab', excluded: true, payee: undefined, payeeVpa: undefined });
+  const fresh = txn({ method: 'UPI', merchantRaw: 'RAHUL KUMAR', payee: 'RAHUL KUMAR', payeeVpa: 'rahul.k@okaxis', narration: 'Rs.500 to VPA rahul.k@okaxis' });
+  const m = mergeDetails(old, { ...fresh, id: old.id });
+  assert.equal(m.payeeVpa, 'rahul.k@okaxis');
+  assert.equal(m.narration, 'Rs.500 to VPA rahul.k@okaxis');
+  assert.equal(m.category, 'Travel');
+  assert.equal(m.note, 'cab');
+  assert.equal(m.excluded, true);
+  assert.equal(m.detailVersion, DETAIL_VERSION);
+});
+
+test('demo data includes people to identify', () => {
+  const emails = generateSampleEmails(new Date(2026, 10, 21, 12));
+  const txns = emails.flatMap((e) => parseEmail(e).txns.map((p, i) => buildTransaction(p, { messageId: e.id, index: i, source: 'sample', rules: [], settings: { ownIdentifiers: [] } })));
+  const people = new Set(txns.filter((t) => t.payeeType === 'person').map((t) => payeeKey(t)));
+  assert.ok(people.has('vpa:sunita.devi@oksbi'));
+  assert.ok([...people].some((k) => k.includes('ramesh')));
+  const store = txns.find((t) => t.merchantRaw === 'SHARMA GENERAL STORE');
+  assert.equal(store?.payeeType, 'merchant');
+});
+
+// ---------------- Summary ----------------
+
+test('monthly summary explains unclear spending, people, and category moves', async () => {
+  const { monthInsights, payeeGroups, isUnclear } = await import('../lib/insights');
+  const emails = generateSampleEmails(new Date(2026, 10, 21, 12));
+  const txns = emails.flatMap((e) => parseEmail(e).txns.map((p, i) => buildTransaction(p, { messageId: e.id, index: i, source: 'sample', rules: [], settings: { ownIdentifiers: [] } })));
+  const ins = monthInsights(txns, '2026-11', new Date(2026, 10, 21, 12));
+  const ids = ins.map((i) => i.id);
+  for (const id of ['pace', 'unclear', 'people']) assert.ok(ids.includes(id), `missing ${id}: ${ids.join(',')}`);
+  const unclear = ins.find((i) => i.id === 'unclear')!;
+  assert.match(unclear.text, /isn't identified yet/);
+  const groups = payeeGroups(txns.filter(isUnclear));
+  assert.ok(groups.some((g) => g.vpa === 'sunita.devi@oksbi' && g.type === 'person'));
+  // Once Sunita is named and categorised she stops being unclear.
+  const rule: MerchantRule = { id: 'r', pattern: '/^sunita\\.devi@oksbi$/', label: 'Sunita (house help)', category: 'Rent and Housing', createdAt: '2026-01-01T00:00:00Z' };
+  const fixed = reapplyRules(txns, [rule], { ownIdentifiers: [] });
+  const byId = new Map(fixed.map((t) => [t.id, t]));
+  const after = txns.map((t) => byId.get(t.id) ?? t);
+  assert.ok(!payeeGroups(after.filter(isUnclear)).some((g) => g.vpa === 'sunita.devi@oksbi'));
 });

@@ -145,7 +145,7 @@ export function Settings() {
       </Card>
 
       <Card title={`Category rules (${rules.length})`}>
-        <p className="hint">Rules match merchant names (case-insensitive text, or /regex/). Newest rule wins, and rules re-apply to past transactions you haven’t edited by hand.</p>
+        <p className="hint">Rules match the merchant name, the payee name the bank shows, or their UPI ID (case-insensitive text, or /regex/). Payees you name from a transaction or the Review tab appear here too. Newest rule wins, and rules re-apply to past transactions you haven’t edited by hand.</p>
         <div className="rule-form">
           <input value={rulePattern} onChange={(e) => setRulePattern(e.target.value)} placeholder="Merchant text, e.g. amazon fresh" autoCapitalize="off" />
           <select value={ruleCat} onChange={(e) => setRuleCat(e.target.value as Category)}>
@@ -182,8 +182,9 @@ export function Settings() {
                   <span className="row-main">
                     <strong>{r.pattern}</strong>
                     <small>
-                      → {r.category}
-                      {r.kind ? ` · ${KIND_LABELS[r.kind]}` : ''}
+                      {[r.label && `shown as “${r.label}”`, r.category && `→ ${r.category}`, r.kind && KIND_LABELS[r.kind], r.payeeType && r.payeeType !== 'unknown' && (r.payeeType === 'own' ? 'my account' : r.payeeType === 'merchant' ? 'business' : 'person')]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </small>
                   </span>
                   <button className="link" onClick={() => deleteRule(r.id)}>

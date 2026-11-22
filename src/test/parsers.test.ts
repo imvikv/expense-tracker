@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FIXTURES, generateSampleEmails } from '../lib/sampleEmails';
 import { bankForSender, gmailQuery, parseEmail } from '../lib/parsers';
-import { findDate, findTime, merchantFromInfo, toPaise } from '../lib/parsers/common';
+import { findDate, findTime, findVpa, merchantFromInfo, toPaise } from '../lib/parsers/common';
 import { buildTransaction } from '../lib/categorize';
 
 for (const fx of FIXTURES) {
@@ -99,4 +99,38 @@ test('full card numbers never survive into merchant text', () => {
   });
   assert.equal(res.txns.length, 1);
   assert.doesNotMatch(res.txns[0].merchantRaw, /4111111111111111/);
+});
+
+// ---------------- Payee details ----------------
+
+test('payee name, UPI ID and bank description are captured', () => {
+  const upi = parseEmail(FIXTURES.find((f) => f.name === 'HDFC UPI debit')!.email).txns[0];
+  assert.equal(upi.payee, 'ZOMATO LIMITED');
+  assert.equal(upi.payeeVpa, 'zomato.payu@hdfcbank');
+  assert.match(upi.narration ?? '', /to VPA zomato\.payu@hdfcbank ZOMATO LIMITED/);
+  assert.doesNotMatch(upi.narration ?? '', /632415987001/, 'long references are masked in the description');
+
+  const p2a = parseEmail(FIXTURES.find((f) => f.name.startsWith('Axis account UPI credit'))!.email).txns[0];
+  assert.equal(p2a.payee, 'PRIYA S');
+  assert.equal(p2a.payeeTypeHint, 'person');
+
+  const ecom = parseEmail(FIXTURES.find((f) => f.name.startsWith('Axis debit card e-commerce'))!.email).txns[0];
+  assert.equal(ecom.location, 'MUMBAI');
+
+  const imps = parseEmail(FIXTURES.find((f) => f.name.startsWith('HDFC IMPS'))!.email).txns[0];
+  assert.equal(imps.payeeAccount, '9012');
+  assert.equal(imps.payee, undefined);
+
+  const icici = parseEmail(FIXTURES.find((f) => f.name === 'ICICI credit card')!.email).txns[0];
+  assert.match(icici.narration ?? '', /Info: NETFLIX\.COM\.$/, 'balance boilerplate is trimmed');
+
+  const bill = parseEmail(FIXTURES.find((f) => f.name === 'HDFC card bill payment received')!.email).txns[0];
+  assert.equal(bill.payee, undefined, 'fixed labels are not treated as payees');
+});
+
+test('UPI IDs are found but email addresses are not', () => {
+  assert.equal(findVpa('to VPA rahul.k@okaxis RAHUL'), 'rahul.k@okaxis');
+  assert.equal(findVpa('paid to q123456789@ybl.'), 'q123456789@ybl');
+  assert.equal(findVpa('write to alerts@hdfcbank.net for help'), undefined);
+  assert.equal(findVpa('no ids here'), undefined);
 });

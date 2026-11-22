@@ -1,4 +1,4 @@
-import { genericParse, last4, make, merchantFromInfo, rx, runTemplates, toPaise, type BankParser, type Template } from './common';
+import { genericParse, last4, make, parseInfo, rx, runTemplates, toPaise, type BankParser, type Template } from './common';
 import type { ParsedTxn, PaymentMethod } from '../types';
 
 const T: Template[] = [
@@ -60,11 +60,15 @@ function parseKeyValue(body: string, receivedAt: string): ParsedTxn | null {
   if (!amountPaise) return null;
   const info = m[5].trim();
   const method = infoMethod(info) ?? 'Account';
+  const parts = parseInfo(info);
   return make('AXIS', 'axis.account.kv', {
     text: body,
     direction: /debited/i.test(m[1]) ? 'debit' : 'credit',
     amountPaise,
-    merchantRaw: merchantFromInfo(info),
+    merchantRaw: parts.name,
+    narration: info,
+    location: parts.location,
+    payeeTypeHint: parts.typeHint,
     method,
     accountLast4: last4(m[3]),
     kindHint: method === 'ATM' ? 'cash' : undefined,

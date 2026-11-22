@@ -88,7 +88,7 @@ function Shell() {
         {error && <p className="error page">Storage error: {error}</p>}
         {tab === 'home' && (txns.length === 0 ? <Welcome onSync={() => setSyncOpen(true)} onSettings={() => setTab('settings')} /> : <Dashboard go={go} />)}
         {tab === 'txns' && <Transactions initial={filter} />}
-        {tab === 'review' && <Review />}
+        {tab === 'review' && <Review go={go} />}
         {tab === 'settings' && <Settings />}
       </main>
 

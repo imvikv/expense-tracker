@@ -4,7 +4,7 @@ A private, single-user expense tracker that reads **HDFC, ICICI, Axis and HSBC I
 
 - **No backend, no database server, no analytics, no AI APIs.** Static files on GitHub Pages; your browser talks only to Google.
 - **Read-only Gmail access**, token held in memory only.
-- **Email bodies are never stored.** Only parsed fields (date, amount, merchant, bank, card/account last 4, Gmail message ID) go into IndexedDB on your device.
+- **Email bodies are never stored.** Only parsed fields go into IndexedDB on your device: date, amount, merchant, who you paid (name, UPI ID, their account's last 4), the one-sentence bank description with long numbers masked, the email subject, your card/account last 4 and the Gmail message ID.
 - Works in Safari on iPhone (add to Home Screen for an app-like experience) and any modern desktop browser.
 
 Live URL (after deploying): **https://imvikv.github.io/expense-tracker/**
@@ -19,7 +19,8 @@ Live URL (after deploying): **https://imvikv.github.io/expense-tracker/**
 | Parsing | Separate HDFC / ICICI / Axis / HSBC template parsers for credit card, debit card, UPI, account debit/credit, NEFT/IMPS, ATM, refunds/reversals, card bill payments and bank fees, with a low-confidence generic fallback. Ignores OTPs, declined transactions, promotions and look-alike sender domains. Mail that fails DMARC/DKIM is downgraded to low confidence. |
 | Accuracy | Amounts stored as integer paise. Card bill payments (incl. via CRED), transfers, income and investments are kept out of spending; refunds reduce it. Duplicate detection: same UPI ref/RRN → hidden as duplicate (reversible); same amount on the same card/merchant within 15 min → flagged for you to decide. Nothing ambiguous is merged automatically. |
 | Categories | 85 built-in Indian merchant rules (Swiggy, Zomato, Blinkit, Zepto, Uber, Ola, Netflix, Amazon, Flipkart…), your own text or `/regex/` rules, “always use this for <merchant>” from any transaction, re-applied to history (manual edits are never overwritten). |
-| Dashboard | This month vs last month, monthly average, top category, 12-month trend, category / merchant / bank / card-vs-UPI breakdowns, recurring subscriptions, unusually large expenses, and a “not counted as spending” panel so totals are explainable. |
+| Payees | Every transaction records who was paid: name as the bank wrote it, UPI ID, counterparty account (last 4), city when given, the bank's own one-line description and the email subject. Payees are tagged person / business / your own account (bank P2A/P2M markers, merchant-QR UPI IDs, name heuristics). **Review → Identify who you paid** groups unidentified spending by payee; name one once (e.g. “Sunita (house help)”) and every past and future payment to that UPI ID is renamed and categorised. Older transactions get these details on the next sync. |
+| Dashboard | Plain-language summary (month-end projection, how much is still unidentified, money sent to people, biggest category moves, new payees, largest payment), who you paid (all / people), category changes vs last month, this month vs last month, monthly average, top category, 12-month trend, category / merchant / bank / card-vs-UPI breakdowns, recurring subscriptions, unusually large expenses, and a “not counted as spending” panel so totals are explainable. |
 | Explorer | Search, filter by month/date range/bank/category/type/method, edit category & type, exclude, notes, open source email in Gmail, CSV export. |
 | Review | Possible duplicates, low-confidence parses, unrecognised bank transfers, uncategorised spending, and bank emails no template understood (headers only). |
 | Data | JSON backup/restore, CSV export, demo data, clear all local data, persistent-storage request, on-device parser tester. |
