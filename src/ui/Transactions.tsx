@@ -6,7 +6,7 @@ import { BANK_LABELS, CATEGORIES, KIND_LABELS, type BankId, type Transaction, ty
 import { CatDot, Empty, Icon } from './components';
 import { dayHeading, formatDate, formatINR } from './format';
 import { isUnclear } from '../lib/insights';
-import { SORT_LABELS, sortTxns, type SortKey } from '../lib/sort';
+import { listTotals, SORT_LABELS, sortTxns, type SortKey } from '../lib/sort';
 import { useStore } from './store';
 import { TxnSheet } from './TxnSheet';
 
@@ -105,7 +105,7 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
 
   const months = useMemo(() => [...new Set(txns.map((t) => monthKey(t.date)))].sort().reverse(), [txns]);
   const list = useMemo(() => sortTxns(applyFilter(txns, f), sort), [txns, f, sort]);
-  const total = useMemo(() => list.reduce((s, t) => s + spendPaise(t), 0), [list]);
+  const totals = useMemo(() => listTotals(list), [list]);
   const groups = useMemo(() => {
     const out: Array<{ day: string; items: Transaction[] }> = [];
     for (const t of list.slice(0, limit)) {
@@ -219,12 +219,36 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
           ))}
         </select>
         <span>
-          {list.length} transaction{list.length === 1 ? '' : 's'} · spending {formatINR(total)}
+          {list.length} transaction{list.length === 1 ? '' : 's'}
+          {list.length !== txns.length ? ' match' : ''}
         </span>
         <button className="link" onClick={() => download(`transactions-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(list), 'text/csv;charset=utf-8')} disabled={list.length === 0}>
           <Icon name="download" size={16} /> CSV
         </button>
       </div>
+
+      {list.length > 0 && (
+        <div className="totals" aria-live="polite">
+          <div>
+            <small>Paid out</small>
+            <strong>{formatINR(totals.outPaise)}</strong>
+            <span>{totals.outCount} debit{totals.outCount === 1 ? '' : 's'}</span>
+          </div>
+          <div>
+            <small>Received</small>
+            <strong className={totals.inPaise > 0 ? 'pos' : ''}>{formatINR(totals.inPaise)}</strong>
+            <span>{totals.inCount} credit{totals.inCount === 1 ? '' : 's'}</span>
+          </div>
+          <div>
+            <small>Spending</small>
+            <strong>{formatINR(totals.spendPaise)}</strong>
+            <span>{totals.spendPaise === totals.outPaise ? 'all of it' : totals.spendPaise === 0 ? 'none of it' : 'excl. bills, transfers, refunds'}</span>
+          </div>
+        </div>
+      )}
+      {list.length > 0 && totals.skipped > 0 && (
+        <p className="hint">{totals.skipped} excluded or duplicate transaction{totals.skipped === 1 ? ' is' : 's are'} listed but not added to these totals.</p>
+      )}
 
       {list.length === 0 ? (
         <Empty>{txns.length === 0 ? 'No transactions yet. Sync Gmail or load the demo data from Settings.' : 'No transactions match these filters.'}</Empty>

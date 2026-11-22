@@ -1,4 +1,4 @@
-import { spendPaise } from './analytics';
+import { isCounted, spendPaise } from './analytics';
 import type { Transaction } from './types';
 
 export type SortKey = 'newest' | 'oldest' | 'spend_desc' | 'amount_desc' | 'amount_asc';
@@ -28,4 +28,35 @@ export function sortTxns(list: Transaction[], sort: SortKey): Transaction[] {
     default:
       return out.sort((a, b) => b.date.localeCompare(a.date));
   }
+}
+
+export interface ListTotals {
+  outPaise: number;
+  outCount: number;
+  inPaise: number;
+  inCount: number;
+  /** Net spending (purchases + cash + fees − refunds) within the list. */
+  spendPaise: number;
+  /** Excluded or confirmed-duplicate rows, shown but not totalled. */
+  skipped: number;
+}
+
+/** Totals for exactly the transactions currently listed (after filters). */
+export function listTotals(list: Transaction[]): ListTotals {
+  const r: ListTotals = { outPaise: 0, outCount: 0, inPaise: 0, inCount: 0, spendPaise: 0, skipped: 0 };
+  for (const t of list) {
+    if (!isCounted(t)) {
+      r.skipped++;
+      continue;
+    }
+    if (t.direction === 'debit') {
+      r.outPaise += t.amountPaise;
+      r.outCount++;
+    } else {
+      r.inPaise += t.amountPaise;
+      r.inCount++;
+    }
+    r.spendPaise += spendPaise(t);
+  }
+  return r;
 }

@@ -289,3 +289,17 @@ test('activity sorting by amount and date', async () => {
   const salary = txn({ amountPaise: 12500000, direction: 'credit', merchantRaw: 'ACME' });
   assert.deepEqual(sortTxns([a, salary, b, c], 'spend_desc').map((t) => t.id), [b.id, c.id, a.id, salary.id], 'income goes after spending');
 });
+
+test('activity totals follow exactly what is listed', async () => {
+  const { listTotals } = await import('../lib/sort');
+  const buy = txn({ amountPaise: 100000 });
+  const refund = txn({ amountPaise: 30000, direction: 'credit', kindHint: 'refund', merchantRaw: 'MYNTRA' });
+  const salary = txn({ amountPaise: 5000000, direction: 'credit', merchantRaw: 'ACME' });
+  const transfer = txn({ amountPaise: 200000, method: 'Bank Transfer', merchantRaw: 'account **9012' });
+  const excluded = txn({ amountPaise: 999900 }, { excluded: true });
+  const all = listTotals([buy, refund, salary, transfer, excluded]);
+  assert.deepEqual(all, { outPaise: 300000, outCount: 2, inPaise: 5030000, inCount: 2, spendPaise: 70000, skipped: 1 });
+  const onlyTransfers = listTotals([transfer]);
+  assert.equal(onlyTransfers.outPaise, 200000);
+  assert.equal(onlyTransfers.spendPaise, 0);
+});
