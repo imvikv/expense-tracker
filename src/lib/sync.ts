@@ -4,6 +4,8 @@ import { db, type ProcessedRecord } from './db';
 import { findDuplicates } from './dedupe';
 import { AuthError, fetchEmail, GmailError, listMessageIds } from './gmail';
 import { gmailQuery, parseEmail, type EmailInput } from './parsers';
+import { applyEdit } from './prefs';
+import { syncPrefs } from './prefsSync';
 import { DETAIL_VERSION, PARSER_BUILD, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
 
 export interface SyncProgress {
@@ -20,6 +22,8 @@ export interface SyncProgress {
 }
 
 export interface SyncResult extends SyncProgress {
+  /** Settings backup problem (Gmail sync still succeeded). */
+  prefsError?: string;
   unparsed: number;
   ignored: number;
   duplicatesFlagged: number;
@@ -65,9 +69,14 @@ export async function ingest(
   const stale = [...(await db.getTransactions(nowSkipped)).values()].filter((t) => t.template === 'generic' && !t.userEdited);
   await db.removeTransactions(stale);
 
-  const existing = await db.getTransactions(fresh.map((t) => t.id));
-  const toInsert = fresh.filter((t) => !existing.has(t.id));
-  const toUpdate = fresh
+  // Decisions synced from other devices: skip removed emails, re-apply edits to fresh copies.
+  const prefs = await db.prefsDoc();
+  const freshKept = fresh.filter((t) => !prefs.edits[t.id]?.removed).map((t) => (prefs.edits[t.id] ? applyEdit(t, prefs.edits[t.id]) : t));
+  for (const t of fresh) if (prefs.edits[t.id]?.removed) processed.push({ id: t.sourceMessageId, status: 'ignored', at: now });
+
+  const existing = await db.getTransactions(freshKept.map((t) => t.id));
+  const toInsert = freshKept.filter((t) => !existing.has(t.id));
+  const toUpdate = freshKept
     .filter((t) => {
       const old = existing.get(t.id);
       if (!old) return false;
@@ -123,6 +132,22 @@ export async function syncGmail(opts: {
   const progress: SyncProgress = { phase: 'listing', found: 0, skipped: 0, fetched: 0, total: 0, added: 0, updated: 0, removed: 0 };
   const report = () => opts.onProgress?.({ ...progress });
   report();
+
+  // Pull preferences from other devices first, so their rules and edits apply to new emails.
+  let prefsError: string | undefined;
+  let rules = opts.rules;
+  let settings = opts.settings;
+  try {
+    const r = await syncPrefs();
+    if (r.status === 'synced') {
+      rules = await db.allRules();
+      settings = await db.settings();
+    }
+  } catch (e) {
+    if (e instanceof AuthError) throw e;
+    prefsError = e instanceof Error ? e.message : String(e);
+  }
+  opts = { ...opts, rules, settings };
 
   const before = opts.to ? new Date(opts.to.getFullYear(), opts.to.getMonth(), opts.to.getDate() + 1) : undefined;
   const q = gmailQuery(opts.from, before);
@@ -186,7 +211,12 @@ export async function syncGmail(opts: {
 
   progress.phase = 'done';
   report();
-  return { ...progress, unparsed, ignored, duplicatesFlagged };
+  try {
+    await syncPrefs();
+  } catch (e) {
+    prefsError = e instanceof Error ? e.message : String(e);
+  }
+  return { ...progress, unparsed, ignored, duplicatesFlagged, prefsError };
 }
 
 /** Fetch messages with a small worker pool and ingest them in batches. Progress is saved as it goes. */

@@ -14,7 +14,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-  "connect-src 'self' https://gmail.googleapis.com https://accounts.google.com/gsi/ https://oauth2.googleapis.com",
+  "connect-src 'self' https://gmail.googleapis.com https://www.googleapis.com/drive/v3/ https://www.googleapis.com/upload/drive/v3/ https://accounts.google.com/gsi/ https://oauth2.googleapis.com",
   'frame-src https://accounts.google.com/gsi/',
   "img-src 'self' data:",
   "font-src 'self'",

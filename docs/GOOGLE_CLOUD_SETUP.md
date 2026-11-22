@@ -28,8 +28,11 @@ Open **Google Auth Platform** (<https://console.cloud.google.com/auth/overview>)
    - User type: **External**
    - Publishing status: leave it in **Testing**. Do **not** click *Publish app*.
    - **Test users → Add users** → add your own Gmail address (and any other account you'll use).
-3. **Data Access** → **Add or remove scopes** → filter for `gmail.readonly` → tick
-   `https://www.googleapis.com/auth/gmail.readonly` → **Update** → **Save**.
+3. **Data Access** → **Add or remove scopes** → tick:
+   - `https://www.googleapis.com/auth/gmail.readonly` (read bank alerts)
+   - `https://www.googleapis.com/auth/drive.appdata` (optional: sync your settings across devices — the app can only see its own hidden folder, not your Drive files)
+
+   → **Update** → **Save**. Also enable the **Google Drive API** in APIs & Services → Library (same as step 2) for settings sync.
 
 ## 4. Create the OAuth client
 
@@ -49,6 +52,9 @@ Either (or both):
 - **In the build:** GitHub repo → *Settings → Secrets and variables → Actions → Variables* → **New repository variable** named `GOOGLE_CLIENT_ID` with the client ID as value → re-run the deploy workflow. Every device then has it pre-filled. (It's a *variable*, not a secret, because client IDs are public by design.)
 
 ## 6. First sign-in
+
+(If you enabled settings sync, the consent screen also lists *See, create, and delete its own configuration data in your Google Drive* — tick it. Unticking it is fine; only cross-device settings sync stops working.)
+
 
 Tap **Sync → Connect Gmail & sync**. Expect:
 

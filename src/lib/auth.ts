@@ -8,6 +8,8 @@
  */
 
 export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+/** Hidden per-app folder in the user's own Drive: this app can see only its own file there. */
+export const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 
 interface TokenResponse {
@@ -42,6 +44,7 @@ declare global {
 let token: { value: string; expiresAt: number } | null = null;
 let client: TokenClient | null = null;
 let clientFor = '';
+let driveGranted = false;
 let pending: { resolve: (t: string) => void; reject: (e: Error) => void } | null = null;
 let loadPromise: Promise<GoogleOAuth2> | null = null;
 const listeners = new Set<() => void>();
@@ -78,14 +81,15 @@ export function loadGis(): Promise<GoogleOAuth2> {
 }
 
 /** Prepare the token client ahead of time so the click handler can open the popup synchronously (required by iOS Safari). */
-export async function prepare(clientId: string): Promise<void> {
+export async function prepare(clientId: string, withDrive = true): Promise<void> {
   if (!clientId) return;
   const oauth2 = await loadGis();
-  if (client && clientFor === clientId) return;
-  clientFor = clientId;
+  const key = `${clientId}|${withDrive}`;
+  if (client && clientFor === key) return;
+  clientFor = key;
   client = oauth2.initTokenClient({
     client_id: clientId,
-    scope: GMAIL_SCOPE,
+    scope: withDrive ? `${GMAIL_SCOPE} ${DRIVE_APPDATA_SCOPE}` : GMAIL_SCOPE,
     callback: (r) => {
       const p = pending;
       pending = null;
@@ -97,6 +101,8 @@ export async function prepare(clientId: string): Promise<void> {
         p?.reject(new Error('Gmail read access was not granted. Tick the Gmail permission on the consent screen.'));
         return;
       }
+      // Drive is optional: if the box was unticked, everything except settings backup still works.
+      driveGranted = withDrive && oauth2.hasGrantedAllScopes(r, DRIVE_APPDATA_SCOPE);
       const secs = Number(r.expires_in ?? 3600);
       token = { value: r.access_token, expiresAt: Date.now() + (secs - 60) * 1000 };
       emit();
@@ -138,6 +144,11 @@ export function accessToken(): string | null {
   return null;
 }
 
+/** True when the current token may read/write the app's settings file in Google Drive. */
+export function hasDriveAccess(): boolean {
+  return driveGranted && accessToken() !== null;
+}
+
 export function isConnected(): boolean {
   return accessToken() !== null;
 }
@@ -149,6 +160,7 @@ export function tokenExpiresAt(): number | null {
 /** Forget the token locally (e.g. after a 401). */
 export function dropToken(): void {
   token = null;
+  driveGranted = false;
   emit();
 }
 
@@ -156,6 +168,7 @@ export function dropToken(): void {
 export async function disconnect(): Promise<void> {
   const t = token?.value;
   token = null;
+  driveGranted = false;
   emit();
   if (t) {
     try {

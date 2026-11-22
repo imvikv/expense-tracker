@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { disconnect, isConnected } from '../lib/auth';
+import { accessToken, disconnect, hasDriveAccess, isConnected } from '../lib/auth';
+import { deletePrefsFile } from '../lib/drive';
+import { syncPrefs } from '../lib/prefsSync';
 import { buildTransaction } from '../lib/categorize';
 import { db, requestPersistence, storageEstimate } from '../lib/db';
 import { download, makeBackup, restoreBackup, toCsv } from '../lib/exporters';
@@ -125,6 +127,64 @@ export function Settings() {
             ))}
           </select>
         </label>
+      </Card>
+
+      <Card title="Sync settings across devices">
+        <p className="hint">
+          Keeps your payee names, rules, card-bill choices, own accounts and edits to individual transactions (category, notes, exclusions, removed emails) in a hidden app-only folder in <strong>your own Google Drive</strong>. Open the app in any browser, connect Gmail, and they come back automatically. Transactions themselves aren’t stored there — each device re-reads Gmail.
+        </p>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.prefsSync !== false}
+            onChange={async (e) => {
+              await saveSettings({ prefsSync: e.target.checked });
+              toast(e.target.checked ? 'Settings sync on — takes effect next time you connect Gmail' : 'Settings sync off');
+            }}
+          />
+          Sync my settings via Google Drive
+        </label>
+        <p className="hint">
+          {settings.prefsSync === false
+            ? 'Off: settings stay only in this browser. Use Export / Import backup to move them.'
+            : hasDriveAccess()
+              ? `Connected · last synced ${relativeTime(settings.prefsSyncedAt)}. Changes are saved within a few seconds.`
+              : `Last synced ${relativeTime(settings.prefsSyncedAt)}. Syncs each time you tap Sync and allow the Drive box on Google’s screen.`}
+        </p>
+        {settings.prefsSync !== false && hasDriveAccess() && (
+          <div className="btn-row">
+            <button
+              className="btn"
+              onClick={async () => {
+                try {
+                  const r = await syncPrefs();
+                  await reload();
+                  toast(r.changed ? `Settings synced · ${r.changed} change${r.changed === 1 ? '' : 's'} applied` : 'Settings synced');
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : 'Settings sync failed');
+                }
+              }}
+            >
+              Sync settings now
+            </button>
+            <ConfirmButton
+              danger
+              label="Delete Drive copy"
+              confirmLabel="Tap again to delete"
+              onConfirm={async () => {
+                const t = accessToken();
+                if (!t) return;
+                try {
+                  await deletePrefsFile(t);
+                  await saveSettings({ prefsSync: false });
+                  toast('Drive copy deleted and sync turned off');
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : 'Could not delete');
+                }
+              }}
+            />
+          </div>
+        )}
       </Card>
 
       <Card title="Your own accounts">

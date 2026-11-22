@@ -37,10 +37,10 @@ export function SyncSheet({ open, onClose, openSettings }: { open: boolean; onCl
 
   useEffect(() => {
     if (!open || !settings.clientId) return;
-    prepare(settings.clientId)
+    prepare(settings.clientId, settings.prefsSync !== false)
       .then(() => setReady(true))
       .catch((e: Error) => setErr(e.message));
-  }, [open, settings.clientId]);
+  }, [open, settings.clientId, settings.prefsSync]);
 
   useEffect(() => {
     if (open) setMode(settings.syncedThrough ? 'new' : 'months');
@@ -65,6 +65,7 @@ export function SyncSheet({ open, onClose, openSettings }: { open: boolean; onCl
       const r = await syncGmail({ from: start, to: end, settings, rules, onProgress: setProgress, signal: abort.current.signal });
       await reload();
       toast(`Sync done · ${r.added} new transaction${r.added === 1 ? '' : 's'}${r.updated ? ` · ${r.updated} updated` : ''}${r.removed ? ` · ${r.removed} non-transactions removed` : ''}${r.duplicatesFlagged ? ` · ${r.duplicatesFlagged} duplicate${r.duplicatesFlagged === 1 ? '' : 's'} flagged` : ''}`);
+      if (r.prefsError) window.setTimeout(() => toast(`Settings backup: ${r.prefsError}`), 3300);
       onClose();
     } catch (e) {
       await reload();
@@ -174,7 +175,7 @@ export function SyncSheet({ open, onClose, openSettings }: { open: boolean; onCl
               </button>
             )}
           </div>
-          {!connected && !running && <p className="hint">Google will ask for read-only Gmail access. The sign-in lasts about an hour and is never saved; you’ll reconnect next time.</p>}
+          {!connected && !running && <p className="hint">Google will ask for read-only Gmail access{settings.prefsSync !== false ? ' and for a private app folder in your Drive (to keep your names, rules and edits in sync across devices)' : ''}. The sign-in lasts about an hour and is never saved; you’ll reconnect next time.</p>}
         </>
       )}
     </Sheet>

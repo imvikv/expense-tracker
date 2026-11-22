@@ -57,8 +57,8 @@ function Shell() {
 
   // Load Google sign-in early so the Connect tap can open the popup immediately (iOS requirement).
   useEffect(() => {
-    if (settings.clientId) prepare(settings.clientId).catch(() => undefined);
-  }, [settings.clientId]);
+    if (settings.clientId) prepare(settings.clientId, settings.prefsSync !== false).catch(() => undefined);
+  }, [settings.clientId, settings.prefsSync]);
 
   useEffect(() => {
     window.scrollTo(0, 0);

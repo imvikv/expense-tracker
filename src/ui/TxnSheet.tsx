@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { categoryForKind, payeeKey } from '../lib/categorize';
 import { gmailLink } from '../lib/gmail';
 import { db } from '../lib/db';
+import { schedulePrefsSync } from '../lib/prefsSync';
 import { spendPaise } from '../lib/analytics';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type Category, type Transaction, type TxnKind } from '../lib/types';
 import { Sheet } from './components';
@@ -39,7 +40,7 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
     setBusy(true);
     try {
       const changedClass = category !== txn.category || kind !== txn.kind;
-      await updateTxns([{ ...txn, category, kind, excluded, note: note.trim() || undefined, userEdited: txn.userEdited || changedClass, confidence: changedClass ? 'high' : txn.confidence }]);
+      await updateTxns([{ ...txn, category, kind, excluded, note: note.trim() || undefined, userEdited: txn.userEdited || changedClass, confidence: changedClass ? 'high' : txn.confidence, editedAt: new Date().toISOString() }]);
       toast('Saved');
       onClose();
     } finally {
@@ -48,7 +49,7 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
   };
 
   const setDup = async (status: Transaction['duplicateStatus']) => {
-    await updateTxns([{ ...txn, duplicateStatus: status }]);
+    await updateTxns([{ ...txn, duplicateStatus: status, editedAt: new Date().toISOString() }]);
     toast(status === 'duplicate' ? 'Marked as duplicate — removed from totals' : 'Kept as a separate transaction');
     onClose();
   };
@@ -184,6 +185,7 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
             if (!confirmRemove) return setConfirmRemove(true);
             await db.removeTransactions([txn]);
             await reload();
+            schedulePrefsSync(() => void reload());
             toast('Removed — this email will be skipped from now on');
             onClose();
           }}

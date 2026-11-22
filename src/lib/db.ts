@@ -7,6 +7,7 @@
  *   unparsed     – headers (sender, subject, date) of bank emails no template understood
  *   meta         – settings
  */
+import { emptyDoc, type PrefsDoc } from './prefs';
 import { DEFAULT_SETTINGS, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
 
 const DB_NAME = 'expense-tracker';
@@ -144,11 +145,20 @@ export const db = {
       tx.objectStore('processed').put({ id: t.sourceMessageId, status: 'ignored', at });
     }
     await done(tx);
+    // Remember the removal so other devices (via the synced preferences) skip it too.
+    const d = await this.prefsDoc();
+    for (const t of txns) if (t.source !== 'sample') d.edits[t.id] = { at, removed: true };
+    await this.savePrefsDoc(d);
   },
 
   allRules: () => getAll<MerchantRule>('rules'),
   putRule: (r: MerchantRule) => putMany('rules', [r]),
-  deleteRule: (id: string) => del('rules', id),
+  async deleteRule(id: string): Promise<void> {
+    await del('rules', id);
+    const d = await this.prefsDoc();
+    d.deletedRules[id] = new Date().toISOString();
+    await this.savePrefsDoc(d);
+  },
 
   async processedIds(): Promise<Set<string>> {
     const db = await openDb();
@@ -177,6 +187,18 @@ export const db = {
     const db = await openDb();
     const tx = db.transaction('meta', 'readwrite');
     tx.objectStore('meta').put(s, 'settings');
+    await done(tx);
+  },
+
+  async prefsDoc(): Promise<PrefsDoc> {
+    const db = await openDb();
+    const d = (await req(db.transaction('meta').objectStore('meta').get('prefs'))) as PrefsDoc | undefined;
+    return d ?? emptyDoc();
+  },
+  async savePrefsDoc(d: PrefsDoc): Promise<void> {
+    const db = await openDb();
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').put(d, 'prefs');
     await done(tx);
   },
 

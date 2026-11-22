@@ -164,6 +164,8 @@ export interface Transaction extends PayeeInfo {
   detailVersion?: number;
   /** Template set used when this was parsed (see PARSER_BUILD). */
   parserBuild?: number;
+  /** When the user last changed this transaction by hand (category, note, exclude, duplicate decision). */
+  editedAt?: string;
   createdAt: string;
 }
 
@@ -203,6 +205,11 @@ export interface Settings {
    */
   billSpendCards?: string[];
   syncMonths: number;
+  /** When ownIdentifiers / billSpendCards / syncMonths last changed (for cross-device merge). */
+  settingsAt?: string;
+  /** Back up preferences to the app's hidden folder in Google Drive (default on). */
+  prefsSync?: boolean;
+  prefsSyncedAt?: string;
   lastSyncAt?: string;
   /** Latest email date seen during sync (ISO), used for incremental sync. */
   syncedThrough?: string;

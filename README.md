@@ -23,6 +23,7 @@ Live URL (after deploying): **https://imvikv.github.io/expense-tracker/**
 | Dashboard | Plain-language summary (month-end projection, how much is still unidentified, money sent to people, biggest category moves, new payees, largest payment), who you paid (all / people), category changes vs last month, this month vs last month, monthly average, top category, 12-month trend, category / merchant / bank / card-vs-UPI breakdowns, recurring subscriptions, unusually large expenses, and a “not counted as spending” panel so totals are explainable. |
 | Explorer | Search, filter by month/date range/bank/category/type/method, edit category & type, exclude, notes, open source email in Gmail, CSV export. |
 | Review | Possible duplicates, low-confidence parses, unrecognised bank transfers, uncategorised spending, and bank emails no template understood (headers only). |
+| Settings sync | Optional (on by default): payee names, rules, card-bill choices, own accounts and per-transaction edits/removals are kept in the app's hidden folder in **your own Google Drive** (`drive.appdata` scope — the app can't see your other files). A new browser gets them back on first Gmail connect, then rebuilds transactions from Gmail. Item-by-item merge, newest change wins. Turn off or delete the Drive copy in Settings. |
 | Data | JSON backup/restore, CSV export, demo data, clear all local data, persistent-storage request, on-device parser tester. |
 | PWA | Manifest, Home Screen icon, offline viewing of synced data; the service worker caches only the app’s own files. |
 
@@ -41,7 +42,7 @@ The code lives in **github.com/imvikv/expense-tracker** (branch `main`).
 On GitHub:
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-2. *(Optional)* **Settings → Secrets and variables → Actions → Variables → New repository variable** `GOOGLE_CLIENT_ID` = your client ID.
+2. **Settings → Secrets and variables → Actions → Variables → New repository variable** `GOOGLE_CLIENT_ID` = your client ID. (Recommended: then every new browser has it built in and you never paste it again.)
 3. **Actions → “Test and deploy to GitHub Pages” → Run workflow** (or just push to `main`).
 
 The workflow installs dependencies, runs the unit tests, type-checks, builds with the right base path (`/expense-tracker/`), checks that no source maps or client secrets ended up in the build, and publishes `dist/`.

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { db } from '../lib/db';
 import { reapplyRules } from '../lib/categorize';
+import { schedulePrefsSync } from '../lib/prefsSync';
 import { DEFAULT_SETTINGS, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from '../lib/types';
 
 export interface Store {
@@ -60,19 +61,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setToast((m) => (m === msg ? null : m)), 3200);
   }, []);
 
-  const updateTxns = useCallback(async (changed: Transaction[]) => {
-    await db.putTransactions(changed);
-    const byId = new Map(changed.map((t) => [t.id, t]));
-    setTxns((prev) => prev.map((t) => byId.get(t.id) ?? t));
-  }, []);
+  const updateTxns = useCallback(
+    async (changed: Transaction[]) => {
+      await db.putTransactions(changed);
+      const byId = new Map(changed.map((t) => [t.id, t]));
+      setTxns((prev) => prev.map((t) => byId.get(t.id) ?? t));
+      if (changed.some((t) => t.editedAt)) schedulePrefsSync(() => void reload());
+    },
+    [reload],
+  );
 
   const saveSettings = useCallback(
     async (patch: Partial<Settings>) => {
+      const syncable = 'ownIdentifiers' in patch || 'billSpendCards' in patch || 'syncMonths' in patch;
+      if (syncable) patch = { ...patch, settingsAt: new Date().toISOString() };
       const next = { ...(await db.settings()), ...patch };
       await db.saveSettings(next);
       setSettings((cur) => ({ ...cur, ...patch }));
+      if (syncable) schedulePrefsSync(() => void reload());
     },
-    [],
+    [reload],
   );
 
   const addRule = useCallback(
@@ -82,9 +90,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRules(all);
       const changed = reapplyRules(await db.allTransactions(), all, settings);
       await updateTxns(changed);
+      schedulePrefsSync(() => void reload());
       return changed.length;
     },
-    [settings, updateTxns],
+    [settings, updateTxns, reload],
   );
 
   const deleteRule = useCallback(
@@ -94,20 +103,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRules(all);
       const changed = reapplyRules(await db.allTransactions(), all, settings);
       await updateTxns(changed);
+      schedulePrefsSync(() => void reload());
     },
-    [settings, updateTxns],
+    [settings, updateTxns, reload],
   );
 
   const setBillSpendCards = useCallback(
     async (cards: string[]) => {
-      const next = { ...(await db.settings()), billSpendCards: cards };
+      const next = { ...(await db.settings()), billSpendCards: cards, settingsAt: new Date().toISOString() };
       await db.saveSettings(next);
-      setSettings((cur) => ({ ...cur, billSpendCards: cards }));
+      setSettings((cur) => ({ ...cur, billSpendCards: cards, settingsAt: next.settingsAt }));
       const changed = reapplyRules(await db.allTransactions(), await db.allRules(), next);
       await updateTxns(changed);
+      schedulePrefsSync(() => void reload());
       return changed.length;
     },
-    [updateTxns],
+    [updateTxns, reload],
   );
 
   const dismissUnparsed = useCallback(async (id: string) => {

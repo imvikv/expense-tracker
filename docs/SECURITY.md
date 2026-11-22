@@ -25,6 +25,13 @@
 | HTML email rendering | Email HTML is converted to text with string operations; it is never inserted into the DOM, so no remote images/scripts load. |
 | Source exposure | Production build has no source maps (CI checks). |
 
+## Settings sync (Google Drive app folder)
+
+- Uses the `drive.appdata` scope: a hidden per-app folder in the user's own Drive. The app cannot list or read any other Drive file, and the folder is invisible in the Drive UI.
+- Stored there: rules (patterns, payee nicknames, categories), own-account identifiers, card-bill card last-4s, and per-transaction user decisions keyed by Gmail message id (category, type, note, excluded, duplicate decision, removed). **No amounts, dates, merchants or email text.**
+- The file is validated on read (unknown categories/kinds dropped, sizes capped) because it is user-controlled data.
+- Off switch and "Delete Drive copy" in Settings. "Clear all local data" doesn't touch the Drive copy.
+
 ## Things to review yourself
 
 - The GitHub Actions workflow uses official `actions/*` actions only. Pin them to commit SHAs if you want stronger supply-chain guarantees.
