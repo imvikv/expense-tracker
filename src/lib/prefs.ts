@@ -44,9 +44,11 @@ export function emptyDoc(): PrefsDoc {
 
 /** The user-made parts of a transaction, or null when it carries no user decision. */
 export function editOf(t: Transaction): TxnEdit | null {
-  if (!t.editedAt) return null;
+  // Edits made before sync existed have no timestamp: date them by creation so any newer edit wins.
+  const legacy = !t.editedAt && (t.userEdited || t.excluded || !!t.note || t.duplicateStatus === 'not_duplicate');
+  if (!t.editedAt && !legacy) return null;
   return {
-    at: t.editedAt,
+    at: t.editedAt ?? t.createdAt,
     category: t.userEdited ? t.category : undefined,
     kind: t.userEdited ? t.kind : undefined,
     userEdited: t.userEdited || undefined,
