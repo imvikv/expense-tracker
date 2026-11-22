@@ -42,9 +42,51 @@ declare global {
 }
 
 let token: { value: string; expiresAt: number } | null = null;
+
+/*
+ * Session persistence: the short-lived token is kept in sessionStorage so a page refresh
+ * within its hour doesn't need a new sign-in. sessionStorage belongs to this tab/app window
+ * only and is wiped when it closes; the token still expires after ~1 hour and is cleared on
+ * Disconnect. A localStorage flag remembers that consent was given, so later sign-ins can
+ * skip the consent screen (Google just flashes and closes the popup).
+ */
+const SESSION_KEY = 'gauth';
+const GRANTED_KEY = 'gauth-granted';
+
+function saveSession(): void {
+  try {
+    if (token) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...token, drive: driveGranted }));
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* storage unavailable: fall back to memory only */
+  }
+}
+
+function restoreSession(): void {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const t = JSON.parse(raw) as { value?: string; expiresAt?: number; drive?: boolean };
+    if (typeof t.value === 'string' && typeof t.expiresAt === 'number' && t.expiresAt > Date.now()) {
+      token = { value: t.value, expiresAt: t.expiresAt };
+      driveGranted = !!t.drive;
+    } else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function hasGrantedBefore(): boolean {
+  try {
+    return localStorage.getItem(GRANTED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 let client: TokenClient | null = null;
 let clientFor = '';
 let driveGranted = false;
+restoreSession();
 let pending: { resolve: (t: string) => void; reject: (e: Error) => void } | null = null;
 let loadPromise: Promise<GoogleOAuth2> | null = null;
 const listeners = new Set<() => void>();
@@ -105,6 +147,12 @@ export async function prepare(clientId: string, withDrive = true): Promise<void>
       driveGranted = withDrive && oauth2.hasGrantedAllScopes(r, DRIVE_APPDATA_SCOPE);
       const secs = Number(r.expires_in ?? 3600);
       token = { value: r.access_token, expiresAt: Date.now() + (secs - 60) * 1000 };
+      saveSession();
+      try {
+        localStorage.setItem(GRANTED_KEY, '1');
+      } catch {
+        /* ignore */
+      }
       emit();
       p?.resolve(r.access_token);
     },
@@ -131,7 +179,8 @@ export function connect(): Promise<string> {
   if (pending) pending.reject(new Error('Superseded by a new sign-in request.'));
   return new Promise((resolve, reject) => {
     pending = { resolve, reject };
-    client!.requestAccessToken({ prompt: token ? '' : undefined });
+    // After the first consent, prompt '' lets Google return a token without showing the consent page again.
+    client!.requestAccessToken({ prompt: token || hasGrantedBefore() ? '' : undefined });
   });
 }
 
@@ -139,6 +188,7 @@ export function accessToken(): string | null {
   if (token && Date.now() < token.expiresAt) return token.value;
   if (token) {
     token = null;
+    saveSession();
     emit();
   }
   return null;
@@ -161,6 +211,7 @@ export function tokenExpiresAt(): number | null {
 export function dropToken(): void {
   token = null;
   driveGranted = false;
+  saveSession();
   emit();
 }
 
@@ -169,6 +220,12 @@ export async function disconnect(): Promise<void> {
   const t = token?.value;
   token = null;
   driveGranted = false;
+  saveSession();
+  try {
+    localStorage.removeItem(GRANTED_KEY);
+  } catch {
+    /* ignore */
+  }
   emit();
   if (t) {
     try {

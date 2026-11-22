@@ -13,7 +13,7 @@
 
 | Risk | Control |
 |---|---|
-| Token leakage | Token only in a module variable (`src/lib/auth.ts`); never in URLs, storage or logs; `Authorization` header only to `gmail.googleapis.com`; `referrerPolicy: no-referrer`; revoked on Disconnect / Clear all. |
+| Token leakage | Token in memory plus `sessionStorage` (this tab/app window only, wiped when it closes, ~1 h expiry) so a refresh doesn't force a new sign-in; never in localStorage, IndexedDB, URLs or logs. A localStorage flag records only that consent was given, so later sign-ins skip the consent page; `Authorization` header only to `gmail.googleapis.com`; `referrerPolicy: no-referrer`; revoked on Disconnect / Clear all. |
 | Secrets in repo | Only the public client ID is used, from a GitHub *variable* or entered at runtime. CI fails if `GOCSPX-`/`client_secret` appears in the build. |
 | Email content at rest | Bodies are parsed in memory and discarded. Stored: parsed fields; the counterparty's name, UPI ID and account last 4; the single sentence describing the transaction (9+ digit numbers masked; balance and helpline text trimmed); the subject line (truncated); Gmail message IDs. For bank emails no template matched: sender, subject and date only. |
 | Full card / account numbers | Only last 4 digits are kept; 9+ digit runs in merchant text are masked. Backups are sanitised on import. |
