@@ -17,6 +17,8 @@ export interface Store {
   addRule(rule: MerchantRule): Promise<number>;
   deleteRule(id: string): Promise<void>;
   dismissUnparsed(id: string): Promise<void>;
+  /** Choose which cards' bill payments count as spending, and re-classify stored bills. */
+  setBillSpendCards(cards: string[]): Promise<number>;
   toast(msg: string): void;
   toastMsg: string | null;
 }
@@ -96,14 +98,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [settings, updateTxns],
   );
 
+  const setBillSpendCards = useCallback(
+    async (cards: string[]) => {
+      const next = { ...(await db.settings()), billSpendCards: cards };
+      await db.saveSettings(next);
+      setSettings((cur) => ({ ...cur, billSpendCards: cards }));
+      const changed = reapplyRules(await db.allTransactions(), await db.allRules(), next);
+      await updateTxns(changed);
+      return changed.length;
+    },
+    [updateTxns],
+  );
+
   const dismissUnparsed = useCallback(async (id: string) => {
     await db.deleteUnparsed(id);
     setUnparsed((u) => u.filter((x) => x.id !== id));
   }, []);
 
   const value = useMemo<Store>(
-    () => ({ ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, toast, toastMsg }),
-    [ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, toast, toastMsg],
+    () => ({ ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, toast, toastMsg }),
+    [ready, error, txns, rules, settings, unparsed, reload, updateTxns, saveSettings, addRule, deleteRule, dismissUnparsed, setBillSpendCards, toast, toastMsg],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -222,6 +222,12 @@ export function categoryForKind(kind: TxnKind, merchantCategory: Category | unde
   }
 }
 
+/** For a card bill paid from a bank account, the card's last 4 digits (when the email says which card). */
+export function billCard(p: Pick<PayeeInfo, 'payeeAccount' | 'payeeTypeHint'> & { merchantRaw?: string }): string | undefined {
+  if (p.payeeAccount && (p.payeeTypeHint === 'own' || /credit\s*card/i.test(p.merchantRaw ?? ''))) return p.payeeAccount;
+  return undefined;
+}
+
 export interface Classification {
   merchant: string;
   kind: TxnKind;
@@ -233,15 +239,16 @@ export interface Classification {
 export type ClassifyInput = Pick<ParsedTxn, 'merchantRaw' | 'direction' | 'method' | 'kindHint' | 'confidence' | 'accountLast4'> & PayeeInfo;
 
 /** Decide display name, payee type, kind and category for a parsed transaction. */
-export function classify(p: ClassifyInput, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers'>): Classification {
-  let merchant = normaliseMerchant(p.merchantRaw || p.payeeVpa || '');
+export function classify(p: ClassifyInput, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers' | 'billSpendCards'>): Classification {
+  // A card bill paid from your account: name it after the card ("ICICI Credit Card ••6252").
+  let merchant = p.payeeTypeHint === 'own' && p.payee ? p.payee : normaliseMerchant(p.merchantRaw || p.payeeVpa || '');
   const def = MERCHANTS.find((m) => m.name === merchant) ?? MERCHANTS.find((m) => m.match.test(p.merchantRaw));
   let confidence = p.confidence;
   const own = matchesOwn(settings.ownIdentifiers, p.merchantRaw, merchant, p.payeeVpa, p.payeeAccount);
 
   // Who is the counterparty?
   let payeeType: PayeeType;
-  if (own) payeeType = 'own';
+  if (own || p.payeeTypeHint === 'own') payeeType = 'own';
   else if (def) payeeType = 'merchant';
   else if (p.payeeTypeHint) payeeType = p.payeeTypeHint;
   else if (p.method === 'Credit Card' || p.method === 'Debit Card' || p.method === 'ATM') payeeType = 'merchant';
@@ -264,6 +271,13 @@ export function classify(p: ClassifyInput, rules: MerchantRule[], settings: Pick
 
   let category = categoryForKind(kind, def?.category);
 
+  // Bills of cards the user doesn't get purchase alerts for count as spending (paid from a bank account).
+  const card = billCard(p);
+  if (kind === 'cc_payment' && p.direction === 'debit' && card && settings.billSpendCards?.includes(card)) {
+    kind = 'expense';
+    category = 'Credit Card Payment';
+  }
+
   const subject: RuleSubject = { merchant, merchantRaw: p.merchantRaw, payee: p.payee, payeeVpa: p.payeeVpa };
   const catRule = findRule(rules, subject, (r) => !!r.category || !!r.kind);
   if (catRule) {
@@ -282,7 +296,7 @@ export function classify(p: ClassifyInput, rules: MerchantRule[], settings: Pick
 
 export function buildTransaction(
   p: ParsedTxn,
-  opts: { messageId: string; index: number; source: Transaction['source']; rules: MerchantRule[]; settings: Pick<Settings, 'ownIdentifiers'>; subject?: string },
+  opts: { messageId: string; index: number; source: Transaction['source']; rules: MerchantRule[]; settings: Pick<Settings, 'ownIdentifiers' | 'billSpendCards'>; subject?: string },
 ): Transaction {
   const c = classify(p, opts.rules, opts.settings);
   return {
@@ -320,7 +334,7 @@ export function buildTransaction(
   };
 }
 
-function classifyStored(t: Transaction, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers'>): Classification {
+function classifyStored(t: Transaction, rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers' | 'billSpendCards'>): Classification {
   return classify({ ...t, kindHint: t.parserKind }, rules, settings);
 }
 
@@ -329,7 +343,7 @@ function classifyStored(t: Transaction, rules: MerchantRule[], settings: Pick<Se
  * Category/type edits made by hand are kept; payee nicknames and person/merchant
  * labels still apply to them.
  */
-export function reapplyRules(txns: Transaction[], rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers'>): Transaction[] {
+export function reapplyRules(txns: Transaction[], rules: MerchantRule[], settings: Pick<Settings, 'ownIdentifiers' | 'billSpendCards'>): Transaction[] {
   const changed: Transaction[] = [];
   for (const t of txns) {
     const c = classifyStored(t, rules, settings);
@@ -365,4 +379,37 @@ export function payeeKey(t: Pick<Transaction, 'payeeVpa' | 'payeeAccount' | 'mer
   if (t.payeeVpa) return `vpa:${t.payeeVpa.toLowerCase()}`;
   if (t.payeeAccount) return `acct:${t.payeeAccount}`;
   return `name:${t.merchant.toLowerCase()}`;
+}
+
+export interface CardBillSummary {
+  card: string;
+  /** Bank that issued the card (from the bill email). */
+  bank: string;
+  bills: number;
+  billPaise: number;
+  /** Purchase alerts seen for this card in the same period. */
+  purchases: number;
+  countsAsSpending: boolean;
+}
+
+/**
+ * Cards whose bills were paid from a bank account, with how many purchase alerts
+ * exist for each — a card with bills but no purchases is one whose spending is
+ * invisible unless its bill is counted.
+ */
+export function cardBillSummary(txns: Transaction[], settings: Pick<Settings, 'billSpendCards'>): CardBillSummary[] {
+  const map = new Map<string, CardBillSummary>();
+  for (const t of txns) {
+    if (t.direction !== 'debit' || (t.parserKind ?? t.kind) !== 'cc_payment') continue;
+    const card = billCard(t);
+    if (!card) continue;
+    const s = map.get(card) ?? { card, bank: t.bank, bills: 0, billPaise: 0, purchases: 0, countsAsSpending: !!settings.billSpendCards?.includes(card) };
+    s.bills++;
+    s.billPaise += t.amountPaise;
+    map.set(card, s);
+  }
+  for (const t of txns) {
+    if (t.method === 'Credit Card' && t.direction === 'debit' && t.accountLast4 && map.has(t.accountLast4)) map.get(t.accountLast4)!.purchases++;
+  }
+  return [...map.values()].sort((a, b) => b.billPaise - a.billPaise);
 }

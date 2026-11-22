@@ -303,3 +303,32 @@ test('activity totals follow exactly what is listed', async () => {
   assert.equal(onlyTransfers.outPaise, 200000);
   assert.equal(onlyTransfers.spendPaise, 0);
 });
+
+// ---------------- Card bills paid by auto debit ----------------
+
+test('auto-debit card bill: money out of the bank account, not spending unless the card is opted in', () => {
+  const fx = FIXTURES.find((f) => f.name.startsWith('ICICI card bill paid by auto debit'))!;
+  const p = parseEmail(fx.email).txns[0];
+  assert.equal(p.payeeAccount, '1234', 'the card is the payee');
+  assert.equal(p.accountLast4, '5678', 'paid from the bank account');
+  const off = buildTransaction(p, { messageId: 'a', index: 0, source: 'sample', rules: [], settings: { ownIdentifiers: [] } });
+  assert.equal(off.kind, 'cc_payment');
+  assert.equal(off.payeeType, 'own');
+  assert.equal(spendPaise(off), 0);
+  const on = buildTransaction(p, { messageId: 'a', index: 0, source: 'sample', rules: [], settings: { ownIdentifiers: [], billSpendCards: ['1234'] } });
+  assert.equal(on.kind, 'expense');
+  assert.equal(on.category, 'Credit Card Payment');
+  assert.equal(spendPaise(on), 432150);
+  // Switching the card on later re-classifies stored bills.
+  const [changed] = reapplyRules([off], [], { ownIdentifiers: [], billSpendCards: ['1234'] });
+  assert.equal(changed.kind, 'expense');
+  // Other cards are unaffected.
+  const other = buildTransaction(p, { messageId: 'a', index: 0, source: 'sample', rules: [], settings: { ownIdentifiers: [], billSpendCards: ['9999'] } });
+  assert.equal(other.kind, 'cc_payment');
+});
+
+test('the same auto-debit reported by the card bank and the paying bank is flagged', () => {
+  const card = txn({ bank: 'ICICI', method: 'Account', accountLast4: '5678', kindHint: 'cc_payment', merchantRaw: 'ICICI Credit Card bill', date: '2026-10-30T00:00:00', hasTime: false });
+  const bank = txn({ bank: 'HDFC', method: 'Account', accountLast4: '5678', kindHint: 'cc_payment', merchantRaw: 'ICICI CARD AUTOPAY', date: '2026-10-30T09:12:00' });
+  assert.equal(compare(card, bank), 'suspected');
+});

@@ -6,13 +6,15 @@ import { Card, Empty } from './components';
 import { formatDate, formatINR } from './format';
 import { isUnclear, payeeGroups } from '../lib/insights';
 import { PayeeSheet, PayeeTag } from './Payee';
+import { CardBills } from './CardBills';
+import { cardBillSummary } from '../lib/categorize';
 import type { TxnFilter } from './Transactions';
 import { useStore } from './store';
 import { TxnRow } from './Transactions';
 import { TxnSheet } from './TxnSheet';
 
 export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
-  const { txns, unparsed, dismissUnparsed } = useStore();
+  const { txns, unparsed, dismissUnparsed, settings } = useStore();
   const [open, setOpen] = useState<Transaction | null>(null);
 
   const sections = useMemo(() => {
@@ -31,12 +33,21 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
   const [payee, setPayee] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
+  const hasBillSuggestion = useMemo(() => cardBillSummary(txns, settings).some((c) => c.purchases === 0 && !c.countsAsSpending), [txns, settings]);
   const current = open ? txns.find((t) => t.id === open.id) ?? open : null;
   const nothing = sections.every((s) => s.items.length === 0) && unparsed.length === 0 && unclear.length === 0;
 
   return (
     <div className="page">
-      {nothing && <Empty>All clear — nothing needs review.</Empty>}
+      {nothing && !hasBillSuggestion && <Empty>All clear — nothing needs review.</Empty>}
+      {hasBillSuggestion && (
+        <Card title="Card bills without purchase alerts">
+          <p className="hint">
+            Bills for these cards were paid, but no purchases on them were found. Bill payments are ignored because purchases are normally counted individually — so this card's spending may be missing. Check that you get transaction alert emails for it; if you can't, switch it on to count the bill instead.
+          </p>
+          <CardBills suggestOnly />
+        </Card>
+      )}
       {unclear.length > 0 && (
         <Card title={`Identify who you paid (${unclear.length})`}>
           <p className="hint">

@@ -93,7 +93,7 @@ export function findDate(text: string): FoundDate | null {
     },
     // Nov 21, 2026
     {
-      re: /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b/i,
+      re: /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s*(\d{4})\b/i,
       get: (m) => {
         const mo = MONTHS[m[1].toLowerCase()];
         return mo ? [Number(m[3]), mo, Number(m[2])] : null;

@@ -146,6 +146,16 @@ export const FIXTURES: Fixture[] = [
     email: email(I_CC, 'Payment received - ICICI Bank Credit Card', 'Dear Customer,\n\nPayment of INR 18,000.00 has been received on your ICICI Bank Credit Card Account XX5566 on 05-Nov-26. Thank you.', '2026-11-05T10:00:00Z'),
     expect: { bank: 'ICICI', direction: 'credit', amountPaise: 1800000, merchant: 'Credit card bill', method: 'Credit Card', kind: 'cc_payment', last4: '5566', date: '2026-11-05T00:00:00' },
   },
+  {
+    name: 'ICICI card bill paid by auto debit from a bank account',
+    email: email(I_CC, 'Payment received on your ICICI Bank Credit Card', 'Dear Customer,\tOct 30, 2026\n \nGreetings from ICICI Bank.\n\nWe have received payment of Rs 4321.5 for your ICICI Bank Credit Card Account XX 1234 by Auto Debit from your bank Account XX5678 on October 30,2026.', '2026-10-30T06:00:00Z'),
+    expect: { bank: 'ICICI', direction: 'debit', amountPaise: 432150, merchant: 'ICICI Credit Card ••1234', method: 'Account', kind: 'cc_payment', category: 'Credit Card Payment', last4: '5678', date: '2026-10-30T00:00:00' },
+  },
+  {
+    name: 'ICICI card bill payment received (we have received wording)',
+    email: email(I_CC, 'Payment received on your ICICI Bank Credit Card', 'Dear Customer,\n\nWe have received payment of Rs 2,500.00 for your ICICI Bank Credit Card Account XX 1234 by NEFT on November 2,2026.', '2026-11-02T06:00:00Z'),
+    expect: { bank: 'ICICI', direction: 'credit', amountPaise: 250000, merchant: 'Credit card bill', method: 'Credit Card', kind: 'cc_payment', last4: '1234', date: '2026-11-02T00:00:00' },
+  },
   // ---------------- Axis ----------------
   {
     name: 'Axis credit card',

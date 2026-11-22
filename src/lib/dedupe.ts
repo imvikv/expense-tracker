@@ -32,6 +32,9 @@ export function compare(a: Transaction, b: Transaction): DuplicateVerdict {
   if (!closeInTime(a, b)) return 'distinct';
 
   const sameInstrument = a.bank === b.bank && !!a.accountLast4 && a.accountLast4 === b.accountLast4;
+  // A card bill auto-debit is reported by the card bank and by the paying bank: same account, different senders.
+  const sameBillDebit = a.kind === 'cc_payment' && b.kind === 'cc_payment' && !!a.accountLast4 && a.accountLast4 === b.accountLast4;
+  if (sameBillDebit) return 'suspected';
   const sameMerchant = a.merchant !== 'Unknown' && a.merchant.toLowerCase() === b.merchant.toLowerCase();
   if (sameInstrument || sameMerchant) return 'suspected';
   return 'distinct';

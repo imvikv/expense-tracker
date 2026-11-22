@@ -189,6 +189,11 @@ export interface Settings {
   clientId: string;
   /** Names / VPAs / account last-4s that belong to the user, used for transfer detection. */
   ownIdentifiers: string[];
+  /**
+   * Last-4 digits of credit cards whose bill payments should count as spending
+   * (for cards you don't get purchase alerts for — otherwise spending is double-counted).
+   */
+  billSpendCards?: string[];
   syncMonths: number;
   lastSyncAt?: string;
   /** Latest email date seen during sync (ISO), used for incremental sync. */
@@ -199,5 +204,6 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   clientId: '',
   ownIdentifiers: [],
+  billSpendCards: [],
   syncMonths: 12,
 };

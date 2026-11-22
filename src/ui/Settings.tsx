@@ -8,6 +8,7 @@ import { generateSampleEmails } from '../lib/sampleEmails';
 import { ingest, refreshDuplicates } from '../lib/sync';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type BankId, type Category, type TxnKind } from '../lib/types';
 import { Card } from './components';
+import { CardBills } from './CardBills';
 import { formatINR, relativeTime, uid } from './format';
 import { useStore } from './store';
 import { useConnected } from './SyncSheet';
@@ -142,6 +143,13 @@ export function Settings() {
         >
           Save
         </button>
+      </Card>
+
+      <Card title="Credit card bills">
+        <p className="hint">
+          Card bill payments (auto-debit, CRED, net banking) are kept out of spending because each purchase on the card is already counted from its own alert. Switch a card on only if you don't get purchase alerts for it — then its bill is the only record of that spending.
+        </p>
+        <CardBills />
       </Card>
 
       <Card title={`Category rules (${rules.length})`}>
