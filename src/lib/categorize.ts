@@ -14,7 +14,7 @@ interface MerchantDef {
 export const MERCHANTS: MerchantDef[] = [
   // Food delivery & restaurants
   { name: 'Swiggy Instamart', match: /swiggy\s*instamart|instamart/i, category: 'Groceries' },
-  { name: 'Swiggy', match: /swiggy|bundl technologies/i, category: 'Food Delivery' },
+  { name: 'Swiggy', match: /swigg?y?\b|bundl technologies/i, category: 'Food Delivery' },
   { name: 'Zomato', match: /zomato/i, category: 'Food Delivery' },
   { name: 'EatSure', match: /eatsure|rebel foods/i, category: 'Food Delivery' },
   { name: 'Domino’s', match: /domino|jubilant food/i, category: 'Restaurants' },
@@ -30,8 +30,8 @@ export const MERCHANTS: MerchantDef[] = [
   { name: 'More Retail', match: /more retail|\bmore supermarket/i, category: 'Groceries' },
   // Shopping
   { name: 'Amazon Prime', match: /amazon\s*prime|prime\s*video/i, category: 'Subscriptions' },
-  { name: 'Amazon', match: /amazon|amzn/i, category: 'Shopping' },
-  { name: 'Flipkart', match: /flipkart/i, category: 'Shopping' },
+  { name: 'Amazon', match: /amazon|amzn|amazo\b/i, category: 'Shopping' },
+  { name: 'Flipkart', match: /flipka?r|flpkrt|fkrt/i, category: 'Shopping' },
   { name: 'Myntra', match: /myntra/i, category: 'Shopping' },
   { name: 'Ajio', match: /\bajio\b/i, category: 'Shopping' },
   { name: 'Nykaa', match: /nykaa|fsn e-?commerce/i, category: 'Shopping' },

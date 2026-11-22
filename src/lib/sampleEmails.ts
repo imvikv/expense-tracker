@@ -178,6 +178,21 @@ export const FIXTURES: Fixture[] = [
     expect: { bank: 'AXIS', direction: 'debit', amountPaise: 45000, merchant: 'Uber', method: 'Credit Card', kind: 'expense', category: 'Transport', last4: '7890', date: '2026-11-21T08:42:19' },
   },
   {
+    name: 'Axis card alert with "Merchant Name:" layout and truncated merchant',
+    email: email(A_CC, 'Transaction alert on Axis Bank Credit Card', 'Dear Customer,\n\nTransaction Amount: INR 2052\nMerchant Name: PYU*Flipkar\nAxis Bank Credit Card No. XX9988\nDate & Time: 08-10-2026, 11:26:53 IST\nAvailable Limit: INR 1,00,000', '2026-10-08T06:00:00Z'),
+    expect: { bank: 'AXIS', direction: 'debit', amountPaise: 205200, merchant: 'Flipkart', method: 'Credit Card', kind: 'expense', category: 'Shopping', last4: '9988', date: '2026-10-08T11:26:53' },
+  },
+  {
+    name: 'HDFC card alert for a subscription (YOUTUBEGOOGLE)',
+    email: email(H, 'A charge just happened on your Credit Card without OTP', 'Thank you for using your HDFC Bank Card XX9876 for Rs. 799.0 at YOUTUBEGOOGLE on 01-10-2026 13:01:41 .', '2026-10-01T07:31:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 79900, merchant: 'YouTube Premium', method: 'Credit Card', category: 'Subscriptions', last4: '9876', date: '2026-10-01T13:01:41' },
+  },
+  {
+    name: 'HDFC card alert for a utility (WWW AIRTEL IN SI)',
+    email: email(H, 'A charge just happened on your Credit Card without OTP', 'Thank you for using your HDFC Bank Card XX9876 for Rs. 1178.82 at WWW AIRTEL IN SI on 21-09-2026 08:58:19', '2026-09-21T03:28:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 117882, merchant: 'Airtel', method: 'Credit Card', category: 'Mobile & Internet', last4: '9876', date: '2026-09-21T08:58:19' },
+  },
+  {
     name: 'Axis account UPI debit (key/value)',
     email: email(A, 'Debit transaction alert for Axis Bank A/c', 'Dear Customer,\n\nAmount Debited: INR 299.00\nAccount Number: XX2468\nDate & Time: 20-11-26, 13:05:47 IST\nTransaction Info: UPI/P2M/632477712345/ZEPTO MARKETPLACE\n\nIf this transaction was not initiated by you, please call us.', '2026-11-20T07:36:00Z'),
     expect: { bank: 'AXIS', direction: 'debit', amountPaise: 29900, merchant: 'Zepto', method: 'UPI', kind: 'expense', category: 'Groceries', last4: '2468', date: '2026-11-20T13:05:47', reference: '632477712345' },

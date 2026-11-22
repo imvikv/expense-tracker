@@ -3,6 +3,22 @@ import type { ParsedTxn, PaymentMethod } from '../types';
 
 const T: Template[] = [
   {
+    // Key/value card alert:
+    //   Transaction Amount: INR 2052
+    //   Merchant Name: PYU*Flipkar
+    //   Axis Bank Credit Card No. XX6754
+    //   Date & Time: 08-10-2026, 11:26:53 IST
+    name: 'axis.card.kv',
+    re: rx(
+      String.raw`{AMT}[\s\S]{0,40}?Merchant\s*Name\s*:\s*(.+?)\s+(?:Axis Bank )?(Credit|Debit) Card (?:No\.?|Number|ending)?\s*:?\s*(?:XX|[x*]+)?\s*(\d{4})[\s\S]{0,40}?Date\s*&\s*Time\s*:\s*([^\n]+?)(?:\s+IST|\n|$)`,
+    ),
+    direction: 'debit',
+    amount: 1,
+    merchant: 2,
+    account: 4,
+    date: 5,
+  },
+  {
     name: 'axis.cc.spent',
     re: rx(String.raw`Axis Bank Credit Card (?:no\.? )?(?:XX|ending )?(\d{4})[\s\S]{0,40}?{AMT} (?:spent|was spent|has been spent) (?:at|on) (.+?) on \d`),
     direction: 'debit',
