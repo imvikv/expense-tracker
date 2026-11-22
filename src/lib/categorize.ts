@@ -130,7 +130,8 @@ export function stripGateway(raw: string): string {
 
 /** UPI IDs from merchant QR codes carry no name: label them by app plus a short tail. */
 function vpaLabel(local: string): string | null {
-  const tail = (local.match(/\d+/g)?.join('') ?? local).slice(-4);
+  const digits = local.match(/\d+/g)?.join('') ?? '';
+  const tail = (digits.length >= 4 ? digits : local.replace(/^(paytmqr|bharatpe|gpay-?|q|mab\.?|bqr|pos\.?)/i, '')).slice(-4);
   if (/^paytmqr|^paytm-?\d/i.test(local)) return `Paytm QR merchant ••${tail}`;
   if (/^bharatpe/i.test(local)) return `BharatPe merchant ••${tail}`;
   if (/^q\d{5,}/i.test(local)) return `PhonePe QR merchant ••${tail}`;

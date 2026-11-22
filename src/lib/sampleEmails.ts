@@ -136,6 +136,11 @@ export const FIXTURES: Fixture[] = [
     expect: { bank: 'HDFC', direction: 'debit', amountPaise: 4500, merchant: 'Blinkit', method: 'Credit Card', kind: 'expense', category: 'Groceries', last4: '4321', date: '2026-11-05T00:00:00', reference: '632400001111' },
   },
   {
+    name: 'HDFC RuPay credit card UPI without "(ending …)"',
+    email: email(H, '❗ You have done a UPI txn. Check details!', "Dear Customer,\n\nGreetings from HDFC Bank!\n\nWe're sharing this alert to help you quickly check a recent UPI transaction made using your RuPay Credit Card.\n\nTransaction Details:\nRs.210.00 has been debited from your RuPay Credit Card 4321\nPaid to paytmqr6ab4cd@ptys\nDate: 23-06-26\nUPI Transaction Reference Number: 227200001111", '2026-06-23T09:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 21000, merchant: 'Paytm QR merchant ••b4cd', method: 'Credit Card', kind: 'expense', last4: '4321', date: '2026-06-23T00:00:00', reference: '227200001111' },
+  },
+  {
     name: 'HDFC RuPay credit card UPI payment to a merchant QR',
     email: email(H, '❗ You have done a UPI txn. Check details!', 'Transaction Details:\nRs.120.00 has been debited from your RuPay Credit Card (ending 4321) \nPaid to paytmqr281005050101xyz@paytm \nDate: 06-11-26\nUPI Transaction Reference Number: 632400002222', '2026-11-06T09:00:00Z'),
     expect: { bank: 'HDFC', direction: 'debit', amountPaise: 12000, merchant: 'Paytm QR merchant ••0101', method: 'Credit Card', kind: 'expense', last4: '4321', date: '2026-11-06T00:00:00' },

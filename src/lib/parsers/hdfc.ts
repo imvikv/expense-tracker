@@ -9,7 +9,7 @@ const T: Template[] = [
     //   Date: 05-11-26
     //   UPI Transaction Reference Number: 632400001111
     name: 'hdfc.rupaycc.upi',
-    re: rx(String.raw`{AMT} has been debited from your (?:RuPay )?Credit Card \(?ending (\d{4})\)? Paid to (\S+)(?:[ \t]+([^\n]+?))?\s*\n?\s*Date\s*:\s*(\S+)`),
+    re: rx(String.raw`{AMT} has been debited from your (?:RuPay )?Credit Card \(?(?:ending (?:with )?|no\.? )?(?:XX|[x*]+)?\s*(\d{4})\)? Paid to (\S+)(?:[\x20\t]+([^\n]+?))?\s*\n?\s*Date\s*:\s*(\S+)`),
     direction: 'debit',
     method: 'Credit Card',
     amount: 1,
