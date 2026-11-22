@@ -93,3 +93,26 @@ test('auto-generated names never include the marked values', () => {
   assert.doesNotMatch(template.name, /ramesh|stores|7788/i);
   assert.match(template.name, /^HDFC: /);
 });
+
+test('stray spaces and line breaks around the marked text don’t break templates', () => {
+  for (const raw of ['Dear Customer\n INR 500.00 debited from A/c XX1234 on 01-11-26.', 'INR 500.00 debited from A/c XX1234 \nThanks', 'Hi,\n\tRs. 250.00 paid to SHOP NAME \n on 02-11-26']) {
+    const text = normaliseText(raw);
+    const amt = /\d+\.\d\d/.exec(text)!;
+    const spans: Spans = { amount: [amt.index, amt.index + amt[0].length] };
+    const acct = text.indexOf('XX1234');
+    if (acct >= 0) spans.account = [acct, acct + 6];
+    const { template, preview } = buildTemplate({ id: 'w', bank: 'HDFC', text, spans, direction: 'debit' });
+    assert.ok(preview.amountPaise > 0);
+    assert.ok(template.sample, `sample for ${JSON.stringify(raw)}`);
+    assert.ok(applyTemplate(template, template.sample, SAMPLE_RECEIVED_AT));
+  }
+});
+
+test('payee names that wrap lines and accounts marked with their label both work', () => {
+  const text = normaliseText('Rs 900.00 paid to SUPER\nMART STORES from A/c XX4321 on 04-11-26.');
+  const at = (v: string): [number, number] => [text.indexOf(v), text.indexOf(v) + v.length];
+  const { template, preview } = buildTemplate({ id: 'w2', bank: 'HDFC', text, spans: { amount: at('900.00'), payee: at('SUPER\nMART STORES'), account: at('A/c XX4321') }, direction: 'debit' });
+  assert.equal(preview.accountLast4, '4321');
+  assert.match(preview.merchantRaw, /SUPER\s+MART STORES/);
+  assert.ok(template.sample && applyTemplate(template, template.sample, SAMPLE_RECEIVED_AT));
+});

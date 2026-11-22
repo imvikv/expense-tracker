@@ -68,6 +68,11 @@ export function setLocalTemplates(list: CustomTemplate[]): void {
   local = list.map(validateTemplate).filter((t): t is CustomTemplate => t !== null);
 }
 
+/** Templates with a working anonymised sample can be committed to GitHub. */
+export function isExportable(t: CustomTemplate): boolean {
+  return !!t.sample;
+}
+
 export function repoTaughtTemplates(): CustomTemplate[] {
   return repo;
 }
@@ -166,15 +171,19 @@ function capture(field: TaughtField, selected: string, isLast: boolean): string 
       return /^(INR|Rs|Rupees)/i.test(s) ? `${CURRENCY}\\s*${NUMBER}` : NUMBER;
     }
     case 'account':
-    case 'payeeAccount':
+    case 'payeeAccount': {
       if (!/\d{3,}$/.test(s)) throw new Error('Mark the account/card number including its last digits, e.g. “xxxx8848”.');
-      return String.raw`[xX*•]*\s*(\d{3,6})`;
+      // Words marked along with the number ("A/c XX1234") are kept as fixed wording.
+      const m = /^([\s\S]*?)([xX*•]*\s*\d{3,6})$/.exec(s)!;
+      return literal(m[1]) + String.raw`[xX*•]*\s*(\d{3,6})`;
+    }
     case 'date':
       if (!findDate(s)) throw new Error('That doesn’t look like a date. Mark just the date, e.g. “05-11-26”.');
       return dateShape(s);
     case 'payee':
       if (s.length < 2) throw new Error('Mark the name of who was paid (or who paid you).');
-      return isLast ? String.raw`(.+?)(?=\s+(?:on|via|dated|ref|for|at|using)\b|[.,;\n]|$)` : '(.+?)';
+      // Names can wrap onto the next line in HTML emails.
+      return isLast ? String.raw`([^\n]+?(?:\n[^\n]+?)?)(?=\s+(?:on|via|dated|ref|for|at|using)\b|[.,;\n]|$)` : String.raw`([^\n]+?(?:\n[^\n]+?)?)`;
   }
 }
 
@@ -211,12 +220,15 @@ export function buildTemplate(input: BuildInput): BuildResult {
     const ws = text.slice(start, first).search(/\s/);
     start = ws === -1 ? first : start + ws + 1;
   }
+  // Never start or end on whitespace: line breaks and indentation vary between emails.
+  while (start < first && /\s/.test(text[start])) start++;
   // End a little after the last value, within its sentence.
   const lastEnd = ordered[ordered.length - 1][1][1];
   const after = text.slice(lastEnd, lastEnd + 30);
   const stop = after.search(/\n|\.(\s|$)/);
   let suffix = stop === -1 ? after : after.slice(0, stop);
   if (stop === -1) suffix = suffix.replace(/\s+\S*$/, ''); // don't end mid-word
+  suffix = suffix.replace(/\s+$/, '');
 
   let source = '';
   let sample = '';
@@ -248,14 +260,20 @@ export function buildTemplate(input: BuildInput): BuildResult {
     method: input.method,
     kindHint: input.kindHint,
     groups,
-    sample: sample.trim(),
+    sample,
     expect: { amountPaise: 0 },
   };
 
   const preview = applyTemplate(template, text, new Date().toISOString());
   if (!preview) throw new Error('The template didn’t read this email back. Try marking the values again.');
   const fromSample = applyTemplate(template, template.sample, SAMPLE_RECEIVED_AT);
-  if (!fromSample) throw new Error('Could not make a shareable sample for this template.');
+  if (!fromSample) {
+    // The template itself works; only the anonymised copy for GitHub doesn't. Save it as device-only.
+    template.sample = '';
+    template.expect = { amountPaise: preview.amountPaise };
+    compiled.delete(source);
+    return { template, preview };
+  }
   template.expect = {
     amountPaise: fromSample.amountPaise,
     payee: fromSample.payee,
@@ -293,9 +311,11 @@ function redactValue(field: TaughtField, s: string): string {
     case 'payee':
       return 'SAMPLE PAYEE';
     case 'account':
-      return s.replace(/\d+$/, '1234').replace(/\d(?=.*\d{4}$)/g, 'x');
-    case 'payeeAccount':
-      return s.replace(/\d+$/, '5678').replace(/\d(?=.*\d{4}$)/g, 'x');
+    case 'payeeAccount': {
+      const m = /^([\s\S]*?)([xX*•]*\s*)(\d{3,6})$/.exec(s.trim());
+      if (!m) return s;
+      return redactLiteral(m[1]) + m[2] + (field === 'account' ? '1234' : '5678');
+    }
     case 'date':
       return s;
   }

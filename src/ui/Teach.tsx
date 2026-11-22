@@ -236,7 +236,11 @@ export function TeachSheet({ source, onClose }: { source: TeachSource | null; on
                 {formatINR(preview.amountPaise, { decimals: true })} · {preview.payee ?? (preview.payeeAccount ? `account ••${preview.payeeAccount}` : 'no payee')} · {formatDate(preview.date, { time: preview.hasTime, year: true })}
                 {preview.accountLast4 ? ` · your ••${preview.accountLast4}` : ''} · {preview.method} · {KIND_LABELS[previewKind]} ({categoryForKind(previewKind, undefined)})
               </p>
-              <p className="hint">Shareable version (what an export to GitHub contains): “{result && 'ok' in result ? result.ok.template.sample : ''}”</p>
+              {result && 'ok' in result && result.ok.template.sample ? (
+                <p className="hint">Shareable version (what an export to GitHub contains): “{result.ok.template.sample}”</p>
+              ) : (
+                <p className="hint">This template will work on your devices but can’t be exported to GitHub.</p>
+              )}
             </div>
           )}
 

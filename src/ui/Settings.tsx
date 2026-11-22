@@ -12,7 +12,7 @@ import { BANK_LABELS, CATEGORIES, KIND_LABELS, type BankId, type Category, type 
 import { Card } from './components';
 import { CardBills } from './CardBills';
 import { TeachSheet, type TeachSource } from './Teach';
-import { repoTaughtTemplates, type CustomTemplate } from '../lib/parsers/taught';
+import { isExportable, repoTaughtTemplates, type CustomTemplate } from '../lib/parsers/taught';
 import { formatINR, relativeTime, uid } from './format';
 import { useStore } from './store';
 import { useConnected } from './SyncSheet';
@@ -20,7 +20,7 @@ import { useConnected } from './SyncSheet';
 /** Repo templates plus this device's, de-duplicated, as the content of taught-templates.json. */
 function exportTemplates(local: CustomTemplate[]): string {
   const seen = new Set<string>();
-  const all = [...repoTaughtTemplates(), ...local].filter((t) => (seen.has(t.source) ? false : (seen.add(t.source), true)));
+  const all = [...repoTaughtTemplates(), ...local.filter(isExportable)].filter((t) => (seen.has(t.source) ? false : (seen.add(t.source), true)));
   return JSON.stringify(all, null, 2) + '\n';
 }
 
@@ -416,7 +416,7 @@ export function Settings() {
                     {BANK_LABELS[t.bank]} · {t.direction === 'credit' ? 'money in' : 'money out'}
                     {t.kindHint ? ` · ${KIND_LABELS[t.kindHint]}` : ''}
                   </small>
-                  <small className="sample">“{t.sample}”</small>
+                  {t.sample ? <small className="sample">“{t.sample}”</small> : <small>Works on this device; can’t be exported to GitHub (no anonymised sample).</small>}
                 </span>
                 {!repo && (
                   <button className="link" onClick={() => deleteTemplate(t.id)}>
