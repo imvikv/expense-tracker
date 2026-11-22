@@ -276,3 +276,16 @@ test('monthly summary explains unclear spending, people, and category moves', as
   const after = txns.map((t) => byId.get(t.id) ?? t);
   assert.ok(!payeeGroups(after.filter(isUnclear)).some((g) => g.vpa === 'sunita.devi@oksbi'));
 });
+
+test('activity sorting by amount and date', async () => {
+  const { sortTxns } = await import('../lib/sort');
+  const a = txn({ amountPaise: 500, date: '2026-11-01T10:00:00' });
+  const b = txn({ amountPaise: 90000, date: '2026-10-01T10:00:00' });
+  const c = txn({ amountPaise: 2000, date: '2026-11-15T10:00:00' });
+  assert.deepEqual(sortTxns([a, b, c], 'amount_desc').map((t) => t.amountPaise), [90000, 2000, 500]);
+  assert.deepEqual(sortTxns([a, b, c], 'amount_asc').map((t) => t.amountPaise), [500, 2000, 90000]);
+  assert.deepEqual(sortTxns([a, b, c], 'newest').map((t) => t.id), [c.id, a.id, b.id]);
+  assert.deepEqual(sortTxns([a, b, c], 'oldest').map((t) => t.id), [b.id, a.id, c.id]);
+  const salary = txn({ amountPaise: 12500000, direction: 'credit', merchantRaw: 'ACME' });
+  assert.deepEqual(sortTxns([a, salary, b, c], 'spend_desc').map((t) => t.id), [b.id, c.id, a.id, salary.id], 'income goes after spending');
+});

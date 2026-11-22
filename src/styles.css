@@ -1451,3 +1451,17 @@ label.check input {
 .identify .seg {
   margin: 0;
 }
+
+.list-summary {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.list-summary .sort-select {
+  flex: 1 1 100%;
+  font-weight: 600;
+}
+
+.list-summary > span {
+  flex: 1;
+}

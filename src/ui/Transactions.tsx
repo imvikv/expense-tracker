@@ -4,7 +4,9 @@ import { download, toCsv } from '../lib/exporters';
 import { payeeKey } from '../lib/categorize';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type BankId, type Transaction, type TxnKind } from '../lib/types';
 import { CatDot, Empty, Icon } from './components';
-import { dayHeading, formatINR } from './format';
+import { dayHeading, formatDate, formatINR } from './format';
+import { isUnclear } from '../lib/insights';
+import { SORT_LABELS, sortTxns, type SortKey } from '../lib/sort';
 import { useStore } from './store';
 import { TxnSheet } from './TxnSheet';
 
@@ -23,6 +25,7 @@ export interface TxnFilter {
 
 const PAGE = 200;
 
+
 export function applyFilter(txns: Transaction[], f: TxnFilter): Transaction[] {
   const q = f.search?.trim().toLowerCase();
   return txns.filter((t) => {
@@ -39,7 +42,7 @@ export function applyFilter(txns: Transaction[], f: TxnFilter): Transaction[] {
   });
 }
 
-export function TxnRow({ t, onOpen }: { t: Transaction; onOpen: (t: Transaction) => void }) {
+export function TxnRow({ t, onOpen, showDate }: { t: Transaction; onOpen: (t: Transaction) => void; showDate?: boolean }) {
   const credit = t.direction === 'credit';
   const muted = !isCounted(t) || spendPaise(t) === 0;
   // Show who was actually paid when the name alone may not be enough to recognise it.
@@ -51,6 +54,7 @@ export function TxnRow({ t, onOpen }: { t: Transaction; onOpen: (t: Transaction)
       <span className="txn-main">
         <span className="txn-merchant">{t.merchant}</span>
         <span className="txn-sub">
+          {showDate && `${formatDate(t.date, { year: !t.date.startsWith(String(new Date().getFullYear())) })} · `}
           {t.category} · {BANK_LABELS[t.bank].replace(' Bank', '').replace(' India', '')} {t.method === 'Unknown' ? '' : t.method}
           {t.accountLast4 ? ` ••${t.accountLast4}` : ''}
         </span>
@@ -60,6 +64,7 @@ export function TxnRow({ t, onOpen }: { t: Transaction; onOpen: (t: Transaction)
           {t.duplicateStatus === 'duplicate' && <span className="badge warn">duplicate</span>}
           {t.duplicateStatus === 'suspected' && <span className="badge warn">possible duplicate</span>}
           {t.confidence === 'low' && !t.userEdited && <span className="badge warn">check</span>}
+          {isUnclear(t) && <span className="badge warn">unidentified</span>}
           {t.kind !== 'expense' && <span className="badge">{KIND_LABELS[t.kind]}</span>}
           {t.payeeType === 'person' && <span className="badge payee-person">Person</span>}
         </span>
@@ -77,13 +82,29 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
   const [f, setF] = useState<TxnFilter>(initial);
   const [showFilters, setShowFilters] = useState(false);
   const [limit, setLimit] = useState(PAGE);
+  const [sort, setSort] = useState<SortKey>(() => {
+    try {
+      const v = localStorage.getItem('txn-sort') as SortKey | null;
+      return v && v in SORT_LABELS ? v : 'newest';
+    } catch {
+      return 'newest';
+    }
+  });
+  const byDate = sort === 'newest' || sort === 'oldest';
   const [open, setOpen] = useState<Transaction | null>(null);
 
   useEffect(() => setF(initial), [initial]);
-  useEffect(() => setLimit(PAGE), [f]);
+  useEffect(() => setLimit(PAGE), [f, sort]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('txn-sort', sort);
+    } catch {
+      /* storage unavailable: sort just isn't remembered */
+    }
+  }, [sort]);
 
   const months = useMemo(() => [...new Set(txns.map((t) => monthKey(t.date)))].sort().reverse(), [txns]);
-  const list = useMemo(() => applyFilter(txns, f), [txns, f]);
+  const list = useMemo(() => sortTxns(applyFilter(txns, f), sort), [txns, f, sort]);
   const total = useMemo(() => list.reduce((s, t) => s + spendPaise(t), 0), [list]);
   const groups = useMemo(() => {
     const out: Array<{ day: string; items: Transaction[] }> = [];
@@ -190,6 +211,13 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
       )}
 
       <div className="list-summary">
+        <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort transactions">
+          {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+            <option key={k} value={k}>
+              {SORT_LABELS[k]}
+            </option>
+          ))}
+        </select>
         <span>
           {list.length} transaction{list.length === 1 ? '' : 's'} · spending {formatINR(total)}
         </span>
@@ -202,7 +230,15 @@ export function Transactions({ initial }: { initial: TxnFilter }) {
         <Empty>{txns.length === 0 ? 'No transactions yet. Sync Gmail or load the demo data from Settings.' : 'No transactions match these filters.'}</Empty>
       ) : (
         <div className="txn-groups">
-          {groups.map((g) => (
+          {sort === 'spend_desc' && <p className="hint">Spending sorted by size. Income, transfers and card bill payments are listed after it.</p>}
+          {!byDate && (
+            <div className="card flush">
+              {list.slice(0, limit).map((t) => (
+                <TxnRow key={t.id} t={t} onOpen={setOpen} showDate />
+              ))}
+            </div>
+          )}
+          {byDate && groups.map((g) => (
             <section key={g.day}>
               <h3 className="day-head">{dayHeading(g.day)}</h3>
               <div className="card flush">
