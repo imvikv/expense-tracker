@@ -121,6 +121,12 @@ export interface ParsedTxn extends PayeeInfo {
 /** Bump when parsers start extracting new fields; older Gmail transactions are re-read on the next sync. */
 export const DETAIL_VERSION = 2;
 
+/**
+ * Bump whenever bank templates are added or improved. Transactions that only the
+ * low-confidence generic reader understood are re-read once per bump.
+ */
+export const PARSER_BUILD = 2;
+
 export interface Transaction extends PayeeInfo {
   id: string;
   date: string;
@@ -156,6 +162,8 @@ export interface Transaction extends PayeeInfo {
   subject?: string;
   /** Which parser generation produced the payee details (see DETAIL_VERSION). */
   detailVersion?: number;
+  /** Template set used when this was parsed (see PARSER_BUILD). */
+  parserBuild?: number;
   createdAt: string;
 }
 

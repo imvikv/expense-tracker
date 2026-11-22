@@ -1,4 +1,4 @@
-import { DETAIL_VERSION, type Category, type Confidence, type MerchantRule, type ParsedTxn, type PayeeInfo, type PayeeType, type Settings, type Transaction, type TxnKind } from './types';
+import { DETAIL_VERSION, PARSER_BUILD, type Category, type Confidence, type MerchantRule, type ParsedTxn, type PayeeInfo, type PayeeType, type Settings, type Transaction, type TxnKind } from './types';
 
 interface MerchantDef {
   name: string;
@@ -323,6 +323,7 @@ export function buildTransaction(
     location: p.location,
     subject: opts.subject ? opts.subject.slice(0, 140) : undefined,
     detailVersion: DETAIL_VERSION,
+    parserBuild: PARSER_BUILD,
     source: opts.source,
     sourceMessageId: opts.messageId,
     confidence: c.confidence,
@@ -369,7 +370,13 @@ export function mergeDetails(old: Transaction, fresh: Transaction): Transaction 
     subject: fresh.subject ?? old.subject,
     reference: old.reference ?? fresh.reference,
     detailVersion: DETAIL_VERSION,
+    parserBuild: PARSER_BUILD,
   };
+  // A guess by the generic reader that a bank template now understands: take the new reading
+  // wholesale (amount, direction, date, accounts), keeping only the user's own decisions.
+  if (old.template === 'generic' && fresh.template !== 'generic' && !old.userEdited) {
+    return { ...fresh, id: old.id, excluded: old.excluded, note: old.note, duplicateStatus: 'none', duplicateOf: undefined, createdAt: old.createdAt, subject: fresh.subject ?? old.subject };
+  }
   if (old.userEdited) return { ...base, payeeType: fresh.payeeType, merchant: fresh.merchant };
   return { ...base, payeeType: fresh.payeeType, merchant: fresh.merchant, merchantRaw: fresh.merchantRaw, kind: fresh.kind, category: fresh.category, parserKind: fresh.parserKind, template: fresh.template, confidence: fresh.confidence };
 }

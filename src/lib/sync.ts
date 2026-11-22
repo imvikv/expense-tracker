@@ -4,7 +4,7 @@ import { db, type ProcessedRecord } from './db';
 import { findDuplicates } from './dedupe';
 import { AuthError, fetchEmail, GmailError, listMessageIds } from './gmail';
 import { gmailQuery, parseEmail, type EmailInput } from './parsers';
-import { DETAIL_VERSION, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
+import { DETAIL_VERSION, PARSER_BUILD, type MerchantRule, type Settings, type Transaction, type UnparsedEmail } from './types';
 
 export interface SyncProgress {
   phase: 'listing' | 'fetching' | 'updating' | 'finishing' | 'done';
@@ -58,7 +58,12 @@ export async function ingest(
   const existing = await db.getTransactions(fresh.map((t) => t.id));
   const toInsert = fresh.filter((t) => !existing.has(t.id));
   const toUpdate = fresh
-    .filter((t) => existing.has(t.id) && (existing.get(t.id)!.detailVersion ?? 1) < DETAIL_VERSION)
+    .filter((t) => {
+      const old = existing.get(t.id);
+      if (!old) return false;
+      // Older parser generation, or a generic low-confidence read that a bank template now understands.
+      return (old.detailVersion ?? 1) < DETAIL_VERSION || (old.template === 'generic' && (old.parserBuild ?? 1) < PARSER_BUILD);
+    })
     .map((t) => mergeDetails(existing.get(t.id)!, t));
   const added = await db.insertNewTransactions(toInsert);
   await db.putTransactions(toUpdate);
@@ -72,7 +77,7 @@ export async function ingest(
 export async function backfillCandidates(): Promise<string[]> {
   const [txns, unparsed] = await Promise.all([db.allTransactions(), db.allUnparsed()]);
   const ids = new Set<string>();
-  for (const t of txns) if (t.source === 'gmail' && (t.detailVersion ?? 1) < DETAIL_VERSION) ids.add(t.sourceMessageId);
+  for (const t of txns) if (t.source === 'gmail' && ((t.detailVersion ?? 1) < DETAIL_VERSION || (t.template === 'generic' && (t.parserBuild ?? 1) < PARSER_BUILD))) ids.add(t.sourceMessageId);
   for (const u of unparsed) if (!u.id.startsWith('sample') && !u.id.startsWith('fx')) ids.add(u.id);
   return [...ids];
 }

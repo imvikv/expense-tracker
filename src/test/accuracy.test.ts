@@ -332,3 +332,14 @@ test('the same auto-debit reported by the card bank and the paying bank is flagg
   const bank = txn({ bank: 'HDFC', method: 'Account', accountLast4: '5678', kindHint: 'cc_payment', merchantRaw: 'ICICI CARD AUTOPAY', date: '2026-10-30T09:12:00' });
   assert.equal(compare(card, bank), 'suspected');
 });
+
+test('a generic guess is replaced when a bank template now understands the email', () => {
+  const fx = FIXTURES.find((f) => f.name.startsWith('ICICI card bill paid by auto debit'))!;
+  const fresh = buildTransaction(parseEmail(fx.email).txns[0], { messageId: 'g', index: 0, source: 'gmail', rules: [], settings: { ownIdentifiers: [] } });
+  const oldGuess = { ...fresh, template: 'generic', direction: 'credit' as const, kind: 'income' as const, category: 'Income' as const, parserBuild: 1, note: 'mine' };
+  const m = mergeDetails(oldGuess, fresh);
+  assert.equal(m.direction, 'debit');
+  assert.equal(m.kind, 'cc_payment');
+  assert.equal(m.note, 'mine');
+  assert.equal(m.id, oldGuess.id);
+});
