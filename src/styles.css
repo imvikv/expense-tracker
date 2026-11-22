@@ -1664,3 +1664,18 @@ ol.bullets li + li {
   background: var(--accent);
   transition: width 0.3s;
 }
+
+pre.formats {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  max-height: 50dvh;
+  overflow-y: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}

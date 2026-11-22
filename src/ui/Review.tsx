@@ -8,6 +8,7 @@ import { isUnclear, payeeGroups } from '../lib/insights';
 import { PayeeSheet, PayeeTag } from './Payee';
 import { CardBills } from './CardBills';
 import { TeachSheet, type TeachSource } from './Teach';
+import { ShareFormatsCard } from './ShareFormats';
 import { cardBillSummary } from '../lib/categorize';
 import type { TxnFilter } from './Transactions';
 import { useStore } from './store';
@@ -93,6 +94,7 @@ export function Review({ go }: { go: (tab: 'txns', f: TxnFilter) => void }) {
             {s.items.length > 50 && <p className="hint">Showing 50 of {s.items.length}.</p>}
           </Card>
         ))}
+      <ShareFormatsCard />
       {unparsed.length > 0 && (
         <Card title={`Bank emails not understood (${unparsed.length})`}>
           <p className="hint">These came from a bank address and mention a transaction, but no template matched, so nothing was recorded. Tap <strong>Teach</strong> to show the app where the amount and payee are; every email with the same wording is then read. Statements, notices and reminders: <strong>Ignore all like this</strong> skips every email from that bank with the same kind of subject (numbers and dates can differ); <strong>Dismiss</strong> hides just one.</p>
