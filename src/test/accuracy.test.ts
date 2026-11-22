@@ -343,3 +343,14 @@ test('a generic guess is replaced when a bank template now understands the email
   assert.equal(m.note, 'mine');
   assert.equal(m.id, oldGuess.id);
 });
+
+test('IMPS transfers record the receiving account; marking it as yours makes it a transfer to self', () => {
+  const fx = FIXTURES.find((f) => f.name.startsWith('HDFC IMPS transfer (account ending'))!;
+  const p = parseEmail(fx.email).txns[0];
+  assert.equal(p.payeeAccount, '3456');
+  const unknown = buildTransaction(p, { messageId: 'x', index: 0, source: 'sample', rules: [], settings: { ownIdentifiers: [] } });
+  assert.equal(unknown.confidence, 'medium', 'unrecognised transfers go to Review');
+  const mine = buildTransaction(p, { messageId: 'x', index: 0, source: 'sample', rules: [], settings: { ownIdentifiers: ['3456'] } });
+  assert.equal(mine.payeeType, 'own');
+  assert.equal(mine.kind, 'transfer');
+});

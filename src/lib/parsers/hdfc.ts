@@ -3,6 +3,27 @@ import { genericParse, rx, runTemplates, type BankParser, type Template } from '
 // In template sources a literal space means "one or more whitespace characters".
 const T: Template[] = [
   {
+    // INR 62,000.00 has been debited from your account ending xxxx8848 on 05-11-26 and
+    // credited to the account ending xxxx8611 via IMPS.
+    name: 'hdfc.transfer.out',
+    re: rx(String.raw`{AMT} (?:has been|is) debited from your (?:account|a/c) (?:ending |no\.? )?[x*]*(\d{3,6}) on \S+ and credited to (?:the )?(?:account|a/c|beneficiary(?: account)?) (?:ending |no\.? )?[x*]*(\d{3,6})(?: via (IMPS|NEFT|RTGS|UPI))?`),
+    direction: 'debit',
+    method: 'Bank Transfer',
+    amount: 1,
+    account: 2,
+    payeeAccountGroup: 3,
+  },
+  {
+    // INR 5,000.00 has been credited to your account ending xxxx8848 on 05-11-26 and debited from the account ending xxxx1234 via IMPS.
+    name: 'hdfc.transfer.in',
+    re: rx(String.raw`{AMT} (?:has been|is) credited to your (?:account|a/c) (?:ending |no\.? )?[x*]*(\d{3,6}) on \S+ and debited from (?:the )?(?:account|a/c|remitter(?: account)?) (?:ending |no\.? )?[x*]*(\d{3,6})(?: via (IMPS|NEFT|RTGS|UPI))?`),
+    direction: 'credit',
+    method: 'Bank Transfer',
+    amount: 1,
+    account: 2,
+    payeeAccountGroup: 3,
+  },
+  {
     name: 'hdfc.atm',
     re: rx(String.raw`{AMT} (?:has been|is) withdrawn from (?:your )?(?:account|a/c) \**X*(\d{3,6})[\s\S]{0,80}? at (ATM.*?) on \d`),
     direction: 'debit',

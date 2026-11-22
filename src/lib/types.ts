@@ -125,7 +125,7 @@ export const DETAIL_VERSION = 2;
  * Bump whenever bank templates are added or improved. Transactions that only the
  * low-confidence generic reader understood are re-read once per bump.
  */
-export const PARSER_BUILD = 3;
+export const PARSER_BUILD = 4;
 
 export interface Transaction extends PayeeInfo {
   id: string;

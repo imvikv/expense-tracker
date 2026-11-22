@@ -251,7 +251,7 @@ export function findPayeeAccount(s: string): string | undefined {
 
 export function findUpiRef(text: string): string | undefined {
   const m =
-    /(?:UPI\s*(?:transaction\s*)?(?:reference|ref)(?:\s*(?:number|no\.?))?|UPI\s*Ref\s*No\.?|RRN|Ref\s*No\.?)\s*(?:is|:)?\s*([0-9]{9,16})/i.exec(text) ??
+    /(?:(?:UPI|IMPS|NEFT|RTGS)\s*(?:transaction\s*)?(?:reference|ref)(?:\s*(?:number|no\.?))?|UPI\s*Ref\s*No\.?|RRN|UTR(?:\s*No\.?)?|Ref(?:erence)?\s*No\.?)\s*(?:is|:)?\s*([0-9]{9,16})/i.exec(text) ??
     /\bUPI[/:-](?:P2[AM][/:-])?([0-9]{12})\b/i.exec(text);
   return m?.[1];
 }
@@ -328,6 +328,7 @@ export function make(
     atEnd?: number;
     narration?: string;
     vpa?: string;
+    payeeAccount?: string;
     location?: string;
     payeeTypeHint?: PayeeType;
     /** False when merchantRaw is a fixed label, not a counterparty from the email. */
@@ -338,12 +339,12 @@ export function make(
   const { date, hasTime, fromBody } = resolveDate(fields.dateText ?? fields.text, fields.receivedAt);
   let confidence: Confidence = fields.confidence ?? 'high';
   if (!fromBody && confidence === 'high') confidence = 'medium';
-  const merchant = cleanMerchant(fields.merchantRaw);
+  const merchant = cleanMerchant(fields.merchantRaw || (fields.payeeAccount ? `account **${fields.payeeAccount}` : ''));
   if (!merchant && confidence === 'high') confidence = 'medium';
   const narration = fields.narration ? maskNumbers(fields.narration).slice(0, 260) : narrationAt(fields.text, fields.at ?? 0, fields.atEnd);
   const vpa = fields.vpa?.toLowerCase() ?? findVpa(narration);
   const hasPayee = fields.hasPayee !== false;
-  const payeeAccount = hasPayee ? findPayeeAccount(merchant) : undefined;
+  const payeeAccount = fields.payeeAccount ?? (hasPayee ? findPayeeAccount(merchant) : undefined);
   const payee = hasPayee && merchant && !payeeAccount ? merchant : hasPayee && !merchant && vpa ? vpa : undefined;
   return {
     bank,
@@ -382,6 +383,8 @@ export interface Template {
   merchantConst?: string;
   /** Group holding the counterparty UPI ID. */
   vpa?: number;
+  /** Group holding the counterparty's account number (last digits). */
+  payeeAccountGroup?: number;
   account?: number;
   /** Optional explicit date group. */
   date?: number;
@@ -405,6 +408,7 @@ export function runTemplates(bank: BankId, templates: Template[], text: string, 
       location: info.location,
       payeeTypeHint: info.typeHint,
       vpa: t.vpa ? m[t.vpa] : undefined,
+      payeeAccount: t.payeeAccountGroup ? last4(m[t.payeeAccountGroup]) : undefined,
       at: m.index,
       atEnd: m.index + m[0].length,
       method: t.method,

@@ -115,6 +115,16 @@ export const FIXTURES: Fixture[] = [
     email: email(H, 'Alert : Update on your HDFC Bank account', 'Dear Customer,\n\nRs.20000.00 has been debited from account **7788 to account **9012 (IMPS) on 14-11-26. IMPS Ref No. 632311112222.', '2026-11-14T07:00:00Z'),
     expect: { bank: 'HDFC', direction: 'debit', amountPaise: 2000000, merchant: 'Account ••9012', method: 'Bank Transfer', kind: 'transfer', category: 'Transfers', last4: '7788', date: '2026-11-14T00:00:00', reference: '632311112222' },
   },
+  {
+    name: 'HDFC IMPS transfer (account ending … via IMPS)',
+    email: email(H, 'Funds transfer alert', 'Dear Customer,\n\nGreetings from HDFC Bank!\n\nINR 45,500.00 has been debited from your account ending xxxxxxxxxx7788 on 05-11-26 and credited to the account ending xxxxxxxxxx3456 via IMPS.\n\nIMPS Reference No: 630900001111', '2026-11-05T06:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'debit', amountPaise: 4550000, merchant: 'Account ••3456', method: 'Bank Transfer', kind: 'transfer', category: 'Transfers', last4: '7788', date: '2026-11-05T00:00:00', reference: '630900001111' },
+  },
+  {
+    name: 'HDFC NEFT money received (account ending … via NEFT)',
+    email: email(H, 'Funds credited alert', 'Dear Customer,\n\nINR 12,000.00 has been credited to your account ending xxxxxxxxxx7788 on 07-11-26 and debited from the account ending xxxxxxxxxx9012 via NEFT.\n\nNEFT Reference No: N311260001234567', '2026-11-07T06:00:00Z'),
+    expect: { bank: 'HDFC', direction: 'credit', amountPaise: 1200000, merchant: 'Account ••9012', method: 'Bank Transfer', kind: 'income', last4: '7788', date: '2026-11-07T00:00:00' },
+  },
   // ---------------- ICICI ----------------
   {
     name: 'ICICI credit card',
