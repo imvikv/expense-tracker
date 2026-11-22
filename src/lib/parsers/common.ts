@@ -271,12 +271,23 @@ export function isDeclined(text: string): boolean {
   return /\b(declined|has failed|was unsuccessful|could not be processed|transaction failed)\b/i.test(text);
 }
 
+/** "card ending 4321", "A/c XX908", "account **7788": a reference to one of your accounts. */
+const MASKED_ACCOUNT = /(?:card|a\/c|acct|account)[^.\n]{0,30}?(?:ending(?:\s+(?:with|in))?|no\.?|number)?\s*(?:xx+|\*\*+|[x*]{2,})\s*\d{3,6}|(?:card|a\/c|acct|account)[^.\n]{0,20}?ending(?:\s+(?:with|in))?\s*\d{4}/i;
+
+/** Marketing language that real transaction alerts don't use. */
+const PROMO_RE =
+  /\b(reward points? on every|on every (?:rs\.?|inr)\s*[\d,]+|earn(?:ing)? (?:up to |upto )?\d*x? ?(?:reward|points|cashback)|\d+x reward|missing out|you(?:'|’)re just|just \d+ swipe|apply now|limited[- ]period|exclusive offer|special offer|pre-?approved|eligible for|upgrade (?:to|your)|unsubscribe|click here to (?:apply|know|avail)|t ?& ?c apply|terms and conditions apply|avail (?:the |this )?offer|win (?:a|up to)|lounge access|welcome benefits?|joining fee|annual fee waiver|on spends? of|cashback of up to|save (?:money|up to)|discover|introducing)\b/gi;
+
+/** A marketing / statement email rather than an alert about one transaction. */
 export function isPromotional(subject: string, text: string): boolean {
   if (/\b(offer|cashback offer|pre-approved|upgrade|win|reward points? statement|e-?statement|statement for)\b/i.test(subject)) {
-    return !AMOUNT_RE.test(text) || !/\b(debited|credited|spent|used|withdrawn|paid)\b/i.test(text);
+    if (!AMOUNT_RE.test(text) || !/\b(debited|credited|spent|used|withdrawn|paid)\b/i.test(text)) return true;
   }
-  return false;
+  const hits = new Set([...`${subject}\n${text}`.matchAll(PROMO_RE)].map((m) => m[0].toLowerCase())).size;
+  // Two different marketing phrases with no masked card/account number = promotion.
+  return hits >= 2 && !MASKED_ACCOUNT.test(text);
 }
+
 
 export function detectMethod(text: string): PaymentMethod {
   if (/\bcredit\s*card\b/i.test(text)) return 'Credit Card';
@@ -411,15 +422,24 @@ export function runTemplates(bank: BankId, templates: Template[], text: string, 
  * low-confidence result when the text clearly states one amount and a direction.
  */
 export function genericParse(bank: BankId, text: string, receivedAt: string): ParsedTxn | null {
+  // The fallback only trusts emails that look like an alert about *your* card/account.
+  if (PROMO_RE.test(text)) {
+    PROMO_RE.lastIndex = 0;
+    return null;
+  }
+  PROMO_RE.lastIndex = 0;
+  if (!MASKED_ACCOUNT.test(text)) return null;
   const amounts = [...text.matchAll(new RegExp(AMOUNT_SRC, 'gi'))];
   if (amounts.length === 0) return null;
+  // "on every Rs 150 spent" / "spends of Rs 5,000" are rates and thresholds, not transactions.
+  const rate = /(?:every|per|above|over|minimum|min\.?|spends? of|up to|upto)\s*$/i;
   const debit = /\b(debited|spent|withdrawn|paid|used for|purchase)\b/i.test(text);
   const credit = /\b(credited|received|refund(ed)?|reversed)\b/i.test(text);
   if (debit === credit) return null; // ambiguous or neither
   // Ignore available balance / limit amounts.
   const first = amounts.find((a) => {
     const before = text.slice(Math.max(0, (a.index ?? 0) - 30), a.index ?? 0);
-    return !/(avail|balance|limit|bal\.?)\s*[:\-]?\s*(is\s*)?$/i.test(before);
+    return !/(avail|balance|limit|bal\.?)\s*[:\-]?\s*(is\s*)?$/i.test(before) && !rate.test(before);
   });
   if (!first) return null;
   const amountPaise = toPaise(first[1]);

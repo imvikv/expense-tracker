@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { categoryForKind, payeeKey } from '../lib/categorize';
 import { gmailLink } from '../lib/gmail';
+import { db } from '../lib/db';
 import { spendPaise } from '../lib/analytics';
 import { BANK_LABELS, CATEGORIES, KIND_LABELS, type Category, type Transaction, type TxnKind } from '../lib/types';
 import { Sheet } from './components';
@@ -9,7 +10,8 @@ import { IdentifyPayee, PayeeDetails } from './Payee';
 import { useStore } from './store';
 
 export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | null; onClose: () => void; onShowPayee?: (key: string) => void }) {
-  const { txns, updateTxns, toast } = useStore();
+  const { txns, updateTxns, reload, toast } = useStore();
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [category, setCategory] = useState<Category>('Uncategorized');
   const [kind, setKind] = useState<TxnKind>('expense');
   const [excluded, setExcluded] = useState(false);
@@ -23,7 +25,8 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
     setKind(txn.kind);
     setExcluded(txn.excluded);
     setNote(txn.note ?? '');
-    setIdentify(txn.category === 'Uncategorized' && txn.kind === 'expense');
+    setIdentify(txn.category === 'Uncategorized' && txn.kind === 'expense' && txn.confidence !== 'low');
+    setConfirmRemove(false);
   }, [txn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!txn) return null;
@@ -88,6 +91,12 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
           <button className="btn ghost" onClick={() => setDup('not_duplicate')}>
             Not a duplicate — count it
           </button>
+        </div>
+      )}
+
+      {txn.confidence === 'low' && !txn.userEdited && (
+        <div className="notice warn">
+          <p>Read with the fallback reader, so it may be wrong. If this email isn't a real payment (a promotion, reminder or statement), remove it.</p>
         </div>
       )}
 
@@ -168,6 +177,18 @@ export function TxnSheet({ txn, onClose, onShowPayee }: { txn: Transaction | nul
         </label>
         <button className="btn primary" onClick={save} disabled={busy || !dirty}>
           Save this transaction
+        </button>
+        <button
+          className={`btn danger ${confirmRemove ? 'armed' : ''}`}
+          onClick={async () => {
+            if (!confirmRemove) return setConfirmRemove(true);
+            await db.removeTransactions([txn]);
+            await reload();
+            toast('Removed — this email will be skipped from now on');
+            onClose();
+          }}
+        >
+          {confirmRemove ? 'Tap again to remove' : 'Not a transaction — remove'}
         </button>
       </div>
     </Sheet>

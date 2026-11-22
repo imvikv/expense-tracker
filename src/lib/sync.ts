@@ -15,6 +15,8 @@ export interface SyncProgress {
   added: number;
   /** Older transactions that received new payee details. */
   updated: number;
+  /** Earlier mistaken transactions (e.g. promotions) removed. */
+  removed: number;
 }
 
 export interface SyncResult extends SyncProgress {
@@ -25,6 +27,8 @@ export interface SyncResult extends SyncProgress {
 
 export interface IngestResult {
   added: number;
+  /** Earlier generic guesses removed because the email is now recognised as not a transaction. */
+  removed: number;
   updated: number;
   unparsed: number;
   ignored: number;
@@ -55,6 +59,12 @@ export async function ingest(
       unparsed.push({ id: e.id, from: e.from.slice(0, 120), subject: e.subject.slice(0, 160), date: e.receivedAt, bank: r.bank });
     } else ignored++;
   }
+  // Emails that an older, looser reader turned into a transaction but are now recognised as
+  // promotions / OTPs / declined: drop those guesses.
+  const nowSkipped = emails.filter((e) => !nowParsed.includes(e.id)).flatMap((e) => [0, 1, 2].map((i) => `${opts.source}:${e.id}:${i}`));
+  const stale = [...(await db.getTransactions(nowSkipped)).values()].filter((t) => t.template === 'generic' && !t.userEdited);
+  await db.removeTransactions(stale);
+
   const existing = await db.getTransactions(fresh.map((t) => t.id));
   const toInsert = fresh.filter((t) => !existing.has(t.id));
   const toUpdate = fresh
@@ -70,7 +80,7 @@ export async function ingest(
   await db.putUnparsed(unparsed);
   await db.deleteUnparsedMany(nowParsed);
   await db.putProcessed(processed);
-  return { added, updated: toUpdate.length, unparsed: unparsed.length, ignored };
+  return { added, updated: toUpdate.length, unparsed: unparsed.length, ignored, removed: stale.length };
 }
 
 /** Gmail message ids whose transactions predate the current payee-detail parser, plus emails no template understood. */
@@ -110,7 +120,7 @@ export async function syncGmail(opts: {
   signal?: AbortSignal;
   concurrency?: number;
 }): Promise<SyncResult> {
-  const progress: SyncProgress = { phase: 'listing', found: 0, skipped: 0, fetched: 0, total: 0, added: 0, updated: 0 };
+  const progress: SyncProgress = { phase: 'listing', found: 0, skipped: 0, fetched: 0, total: 0, added: 0, updated: 0, removed: 0 };
   const report = () => opts.onProgress?.({ ...progress });
   report();
 
@@ -141,6 +151,7 @@ export async function syncGmail(opts: {
   const onBatch = (r: IngestResult) => {
     progress.added += r.added;
     progress.updated += r.updated;
+    progress.removed += r.removed;
     unparsed += r.unparsed;
     ignored += r.ignored;
   };

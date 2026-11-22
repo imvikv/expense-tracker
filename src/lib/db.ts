@@ -133,6 +133,19 @@ export const db = {
     return out;
   },
 
+  /** Delete transactions and remember their emails as "not a transaction" so sync never re-adds them. */
+  async removeTransactions(txns: Transaction[]): Promise<void> {
+    if (txns.length === 0) return;
+    const db = await openDb();
+    const tx = db.transaction(['transactions', 'processed'], 'readwrite');
+    const at = new Date().toISOString();
+    for (const t of txns) {
+      tx.objectStore('transactions').delete(t.id);
+      tx.objectStore('processed').put({ id: t.sourceMessageId, status: 'ignored', at });
+    }
+    await done(tx);
+  },
+
   allRules: () => getAll<MerchantRule>('rules'),
   putRule: (r: MerchantRule) => putMany('rules', [r]),
   deleteRule: (id: string) => del('rules', id),

@@ -225,6 +225,16 @@ export const FIXTURES: Fixture[] = [
     expect: null,
   },
   {
+    name: 'Rewards promotion that mentions an amount "spent"',
+    email: email(S, "You're just 1 swipe away from earning rewards on your HSBC Platinum Credit Card!", "6X Reward Points\nHere's what you've been missing out on:\nEarn points with every purchase\nGet 2 Reward Points on every Rs. 150 spent\nTravel With Points\nUp to 6X Reward Points on travel bookings via Travel with Points portal on the HSBC India Mobile Banking app\nSave money on fuel", '2026-11-20T10:00:00Z'),
+    expect: null,
+  },
+  {
+    name: 'Real alert with a marketing footer still parses',
+    email: email(S, 'HSBC Credit Card transaction alert', 'Dear Customer,\n\nYour HSBC Credit Card ending with 1357 has been used for INR 1,450.00 at DECATHLON SPORTS on 18 Nov 2026 at 12:10.\n\nEarn 2 Reward Points on every Rs. 150 spent. T&C apply.', '2026-11-18T07:00:00Z'),
+    expect: { bank: 'HSBC', direction: 'debit', amountPaise: 145000, merchant: 'Decathlon', method: 'Credit Card', kind: 'expense', category: 'Shopping', last4: '1357', date: '2026-11-18T12:10:00' },
+  },
+  {
     name: 'Promotional email',
     email: email(I_CC, 'Exclusive offer: pre-approved personal loan', 'Dear Customer, you are eligible for a pre-approved personal loan of up to Rs 5,00,000 at attractive rates.', '2026-11-20T10:00:00Z'),
     expect: null,

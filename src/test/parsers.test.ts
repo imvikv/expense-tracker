@@ -134,3 +134,11 @@ test('UPI IDs are found but email addresses are not', () => {
   assert.equal(findVpa('write to alerts@hdfcbank.net for help'), undefined);
   assert.equal(findVpa('no ids here'), undefined);
 });
+
+test('fallback reader ignores rates and needs a card/account reference', async () => {
+  const { genericParse } = await import('../lib/parsers/common');
+  assert.equal(genericParse('HSBC', 'Get 2 Reward Points on every Rs. 150 spent at partner stores.', '2026-11-20T10:00:00Z'), null);
+  assert.equal(genericParse('HSBC', 'Rs. 500 debited for your order.', '2026-11-20T10:00:00Z'), null, 'no card/account mentioned');
+  const ok = genericParse('HSBC', 'Rs. 500 debited from your account XX4680 towards SHOP on 20-11-26.', '2026-11-20T10:00:00Z');
+  assert.equal(ok?.amountPaise, 50000);
+});
